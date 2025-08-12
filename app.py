@@ -1,0 +1,363 @@
+"""
+CQI Dashboard Flask API
+Connects to Snowflake and serves data to the web dashboard
+"""
+
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+import snowflake.connector as sc
+import pandas as pd
+from datetime import datetime, timedelta
+import os
+from functools import lru_cache
+import logging
+
+app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Snowflake connection parameters
+SNOWFLAKE_CONFIG = {
+    'account': 'nsasprd.east-us-2.privatelink',
+    'user': 'm69382',
+    'private_key_file': 'private_key.txt',
+    'private_key_file_pwd': 'KsX.fVfg3_y0Ti5ewb0FNiPUc5kfDdJZws0tdgA.',
+    'warehouse': 'USR_REPORTING_WH',
+    'database': 'PRD_MOBILITY',
+    'schema': 'PRD_MOBILITYSCORECARD_VIEWS'
+}
+
+def get_snowflake_connection():
+    """Create and return a Snowflake connection"""
+    try:
+        conn = sc.connect(**SNOWFLAKE_CONFIG)
+        return conn
+    except Exception as e:
+        logger.error(f"Failed to connect to Snowflake: {str(e)}")
+        raise
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()})
+
+@app.route('/api/filters', methods=['GET'])
+@lru_cache(maxsize=1)
+def get_filter_options():
+    """Get available filter options from the database"""
+    try:
+        conn = get_snowflake_connection()
+        cur = conn.cursor()
+        
+        filters = {}
+        
+        # Get unique submarkets
+        cur.execute("""
+            SELECT DISTINCT SUBMKT 
+            FROM CQI2025_CQX_CONTRIBUTION 
+            WHERE SUBMKT IS NOT NULL 
+            ORDER BY SUBMKT
+        """)
+        filters['submarkets'] = [row[0] for row in cur.fetchall()]
+        
+        # Get unique CQE clusters
+        cur.execute("""
+            SELECT DISTINCT CQECLUSTER 
+            FROM CQI2025_CQX_CONTRIBUTION 
+            WHERE CQECLUSTER IS NOT NULL 
+            ORDER BY CQECLUSTER
+        """)
+        filters['cqeClusters'] = [row[0] for row in cur.fetchall()]
+        
+        # Get unique metric names
+        cur.execute("""
+            SELECT DISTINCT METRICNAME 
+            FROM CQI2025_CQX_CONTRIBUTION 
+            WHERE METRICNAME IS NOT NULL 
+            ORDER BY METRICNAME
+        """)
+        filters['metricNames'] = [row[0] for row in cur.fetchall()]
+        
+        cur.close()
+        conn.close()
+        
+        return jsonify(filters)
+    
+    except Exception as e:
+        logger.error(f"Error fetching filter options: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/data', methods=['GET'])
+def get_cqi_data():
+    """Get CQI data based on filters"""
+    try:
+        # Get filter parameters from query string
+        submarket = request.args.get('submarket', '')
+        cqe_cluster = request.args.get('cqeCluster', '')
+        period_start = request.args.get('periodStart', '')
+        period_end = request.args.get('periodEnd', '')
+        metric_name = request.args.get('metricName', '')
+        usid = request.args.get('usid', '')
+        
+        # Build the query with filters
+        query = """
+            SELECT 
+                CQI_YEAR,
+                CONTRTYPE,
+                PERIODSTART,
+                PERIODEND,
+                FOCUSLEV,
+                FOCUSAREA,
+                DETAILLEV,
+                DETAILAREA,
+                METRICNAME,
+                METTYPE,
+                NUM,
+                DEN,
+                EXTRAFAILURES,
+                FOCUSAREA_L1CQIACTUAL,
+                RAWTARGET,
+                CQITARGET,
+                IDXCONTR,
+                METRICWT,
+                EXP_CONST,
+                TGTNUM,
+                TGTDEN,
+                USID,
+                CQECLUSTER,
+                VENDOR,
+                SUBMKT,
+                N2E_DATE
+            FROM CQI2025_CQX_CONTRIBUTION
+            WHERE 1=1
+        """
+        
+        params = []
+        
+        # Add filters dynamically
+        if submarket:
+            query += " AND SUBMKT = %s"
+            params.append(submarket)
+        
+        if cqe_cluster:
+            query += " AND CQECLUSTER = %s"
+            params.append(cqe_cluster)
+        
+        if period_start:
+            query += " AND PERIODSTART >= %s"
+            params.append(period_start)
+        
+        if period_end:
+            query += " AND PERIODEND <= %s"
+            params.append(period_end)
+        
+        if metric_name:
+            query += " AND METRICNAME = %s"
+            params.append(metric_name)
+        
+        if usid:
+            query += " AND USID = %s"
+            params.append(usid)
+        
+        # Order by contribution index (worst offenders first)
+        query += " ORDER BY IDXCONTR DESC LIMIT 1000"
+        
+        # Execute query
+        conn = get_snowflake_connection()
+        cur = conn.cursor()
+        
+        if params:
+            cur.execute(query, params)
+        else:
+            cur.execute(query)
+        
+        # Fetch results and convert to DataFrame
+        columns = [desc[0] for desc in cur.description]
+        data = cur.fetchall()
+        df = pd.DataFrame(data, columns=columns)
+        
+        cur.close()
+        conn.close()
+        
+        # Convert DataFrame to JSON
+        result = df.to_dict('records')
+        
+        # Convert date columns to ISO format strings
+        for record in result:
+            for key in ['PERIODSTART', 'PERIODEND', 'N2E_DATE']:
+                if key in record and record[key] is not None:
+                    if isinstance(record[key], (datetime, pd.Timestamp)):
+                        record[key] = record[key].isoformat()
+        
+        return jsonify(result)
+    
+    except Exception as e:
+        logger.error(f"Error fetching CQI data: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/summary', methods=['GET'])
+def get_summary_stats():
+    """Get summary statistics for the dashboard"""
+    try:
+        conn = get_snowflake_connection()
+        cur = conn.cursor()
+        
+        # Get date range for last 7 days
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=7)
+        
+        # Query for summary statistics
+        query = """
+            SELECT 
+                COUNT(DISTINCT USID) as total_usids,
+                COUNT(*) as total_records,
+                AVG(FOCUSAREA_L1CQIACTUAL) as avg_cqi_actual,
+                AVG(CQITARGET) as avg_cqi_target,
+                COUNT(CASE WHEN (CQITARGET - FOCUSAREA_L1CQIACTUAL) > 5 THEN 1 END) as critical_issues,
+                COUNT(CASE WHEN (CQITARGET - FOCUSAREA_L1CQIACTUAL) BETWEEN 2 AND 5 THEN 1 END) as medium_issues,
+                COUNT(CASE WHEN (CQITARGET - FOCUSAREA_L1CQIACTUAL) < 2 THEN 1 END) as low_issues
+            FROM CQI2025_CQX_CONTRIBUTION
+            WHERE PERIODSTART >= %s AND PERIODSTART <= %s
+        """
+        
+        cur.execute(query, (start_date, end_date))
+        result = cur.fetchone()
+        
+        summary = {
+            'totalUsids': result[0] or 0,
+            'totalRecords': result[1] or 0,
+            'avgCqiActual': float(result[2] or 0),
+            'avgCqiTarget': float(result[3] or 0),
+            'criticalIssues': result[4] or 0,
+            'mediumIssues': result[5] or 0,
+            'lowIssues': result[6] or 0,
+            'lastUpdated': datetime.now().isoformat()
+        }
+        
+        cur.close()
+        conn.close()
+        
+        return jsonify(summary)
+    
+    except Exception as e:
+        logger.error(f"Error fetching summary stats: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/trends', methods=['GET'])
+def get_trend_data():
+    """Get trend data for visualization"""
+    try:
+        # Get parameters
+        metric_name = request.args.get('metricName', '')
+        days = int(request.args.get('days', 30))
+        
+        conn = get_snowflake_connection()
+        cur = conn.cursor()
+        
+        # Query for trend data
+        query = """
+            SELECT 
+                DATE(PERIODSTART) as date,
+                AVG(FOCUSAREA_L1CQIACTUAL) as avg_actual,
+                AVG(CQITARGET) as avg_target,
+                COUNT(DISTINCT USID) as usid_count
+            FROM CQI2025_CQX_CONTRIBUTION
+            WHERE PERIODSTART >= DATEADD(day, -%s, CURRENT_DATE())
+        """
+        
+        params = [days]
+        
+        if metric_name:
+            query += " AND METRICNAME = %s"
+            params.append(metric_name)
+        
+        query += " GROUP BY DATE(PERIODSTART) ORDER BY date"
+        
+        cur.execute(query, params)
+        
+        columns = [desc[0] for desc in cur.description]
+        data = cur.fetchall()
+        df = pd.DataFrame(data, columns=columns)
+        
+        cur.close()
+        conn.close()
+        
+        # Convert to JSON
+        result = df.to_dict('records')
+        
+        # Convert date to ISO format
+        for record in result:
+            if 'DATE' in record and record['DATE'] is not None:
+                record['DATE'] = record['DATE'].isoformat()
+        
+        return jsonify(result)
+    
+    except Exception as e:
+        logger.error(f"Error fetching trend data: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/export', methods=['GET'])
+def export_data():
+    """Export data to CSV format"""
+    try:
+        # This would be similar to get_cqi_data but returns CSV
+        # Get the data first
+        data_response = get_cqi_data()
+        data = data_response.get_json()
+        
+        if isinstance(data, list) and len(data) > 0:
+            df = pd.DataFrame(data)
+            csv_data = df.to_csv(index=False)
+            
+            response = app.response_class(
+                response=csv_data,
+                status=200,
+                mimetype='text/csv',
+                headers={
+                    'Content-Disposition': f'attachment; filename=cqi_data_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+                }
+            )
+            return response
+        else:
+            return jsonify({'error': 'No data to export'}), 404
+    
+    except Exception as e:
+        logger.error(f"Error exporting data: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Endpoint not found'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'error': 'Internal server error'}), 500
+
+if __name__ == '__main__':
+    # Run the Flask app
+    # In production, use a proper WSGI server like gunicorn
+    app.run(debug=True, host='0.0.0.0', port=5000)
+
+"""
+To run this API:
+
+1. Install required packages:
+   pip install flask flask-cors snowflake-connector-python pandas
+
+2. Ensure your private_key.txt file is in the same directory
+
+3. Run the Flask app:
+   python app.py
+
+4. The API will be available at http://localhost:5000
+
+For production deployment:
+- Use gunicorn or another WSGI server
+- Add proper authentication/authorization
+- Implement connection pooling for Snowflake
+- Add caching for frequently accessed data
+- Set up proper logging and monitoring
+"""

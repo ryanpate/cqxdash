@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CQI Offenders Dashboard - CQX Metrics</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            color: #2d3748;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #718096;
+            font-size: 1.1rem;
+        }
+
+        .filters-section {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .filters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .filter-group label {
+            color: #4a5568;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .filter-group input,
+        .filter-group select {
+            padding: 10px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .filter-group input:focus,
+        .filter-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: #f7fafc;
+            color: #4a5568;
+            border: 2px solid #e2e8f0;
+        }
+
+        .btn-secondary:hover {
+            background: #edf2f7;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-card h3 {
+            color: #718096;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+        }
+
+        .stat-card .value {
+            color: #2d3748;
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .stat-card .change {
+            margin-top: 5px;
+            font-size: 0.9rem;
+        }
+
+        .change.positive {
+            color: #48bb78;
+        }
+
+        .change.negative {
+            color: #f56565;
+        }
+
+        .data-section {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .section-header h2 {
+            color: #2d3748;
+            font-size: 1.5rem;
+        }
+
+        .view-toggle {
+            display: flex;
+            gap: 10px;
+        }
+
+        .view-btn {
+            padding: 8px 16px;
+            border: 2px solid #e2e8f0;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .view-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: transparent;
+        }
+
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: #f7fafc;
+            color: #4a5568;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #e2e8f0;
+            color: #2d3748;
+        }
+
+        tr:hover {
+            background: #f7fafc;
+        }
+
+        .severity-high {
+            background: #fed7d7;
+            color: #c53030;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+
+        .severity-medium {
+            background: #feebc8;
+            color: #c05621;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+
+        .severity-low {
+            background: #c6f6d5;
+            color: #276749;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+
+        #chartContainer {
+            height: 400px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #718096;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e2e8f0;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            background: #fed7d7;
+            color: #c53030;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .success-message {
+            background: #c6f6d5;
+            color: #276749;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>CQI Offenders Dashboard</h1>
+            <p>Real-time monitoring of CQX metrics and performance indicators</p>
+        </div>
+
+        <div class="filters-section">
+            <h2 style="margin-bottom: 20px; color: #2d3748;">Filters</h2>
+            <div class="filters-grid">
+                <div class="filter-group">
+                    <label for="submarket">Submarket</label>
+                    <select id="submarket">
+                        <option value="">All Submarkets</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="cqeCluster">CQE Cluster</label>
+                    <select id="cqeCluster">
+                        <option value="">All Clusters</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="periodStart">Period Start</label>
+                    <input type="date" id="periodStart">
+                </div>
+                <div class="filter-group">
+                    <label for="periodEnd">Period End</label>
+                    <input type="date" id="periodEnd">
+                </div>
+                <div class="filter-group">
+                    <label for="metricName">Metric Name</label>
+                    <select id="metricName">
+                        <option value="">All Metrics</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="usid">USID</label>
+                    <input type="text" id="usid" placeholder="Enter USID">
+                </div>
+            </div>
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="fetchData()">Apply Filters</button>
+                <button class="btn btn-secondary" onclick="resetFilters()">Reset</button>
+                <button class="btn btn-secondary" onclick="exportData()">Export CSV</button>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Total Offenders</h3>
+                <div class="value" id="totalOffenders">0</div>
+                <div class="change negative">↑ 12% from last period</div>
+            </div>
+            <div class="stat-card">
+                <h3>Average CQI Score</h3>
+                <div class="value" id="avgScore">0.00</div>
+                <div class="change positive">↑ 5% improvement</div>
+            </div>
+            <div class="stat-card">
+                <h3>Critical Issues</h3>
+                <div class="value" id="criticalIssues">0</div>
+                <div class="change negative">↑ 3 new issues</div>
+            </div>
+            <div class="stat-card">
+                <h3>Active USIDs</h3>
+                <div class="value" id="activeUsids">0</div>
+                <div class="change positive">↑ 8% coverage</div>
+            </div>
+        </div>
+
+        <div class="data-section">
+            <div class="section-header">
+                <h2>Top Offenders</h2>
+                <div class="view-toggle">
+                    <button class="view-btn active" onclick="showTable()">Table</button>
+                    <button class="view-btn" onclick="showChart()">Chart</button>
+                </div>
+            </div>
+            
+            <div id="tableContainer">
+                <div class="loading">
+                    <div class="loading-spinner"></div>
+                    <p style="margin-top: 10px;">Loading data...</p>
+                </div>
+                <div class="table-container" style="display: none;">
+                    <table id="dataTable">
+                        <thead>
+                            <tr>
+                                <th>USID</th>
+                                <th>Metric Name</th>
+                                <th>CQI Score</th>
+                                <th>Target</th>
+                                <th>Variance</th>
+                                <th>Vendor</th>
+                                <th>CQE Cluster</th>
+                                <th>Submarket</th>
+                                <th>Severity</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <canvas id="chartContainer"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // API endpoint - Update this to your Flask server URL
+        const API_URL = 'http://localhost:5000/api';
+        
+        let currentData = [];
+        let chart = null;
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            setDefaultDates();
+            loadFilterOptions();
+            fetchData();
+        });
+
+        function setDefaultDates() {
+            const today = new Date();
+            const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+            
+            document.getElementById('periodEnd').value = today.toISOString().split('T')[0];
+            document.getElementById('periodStart').value = lastWeek.toISOString().split('T')[0];
+        }
+
+        async function loadFilterOptions() {
+            try {
+                // Fetch filter options from API
+                const response = await fetch(`${API_URL}/filters`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    populateSelect('submarket', data.submarkets);
+                    populateSelect('cqeCluster', data.cqeClusters);
+                    populateSelect('metricName', data.metricNames);
+                } else {
+                    // Use sample data if API is not available
+                    useSampleData();
+                }
+            } catch (error) {
+                console.error('Error loading filters:', error);
+                useSampleData();
+            }
+        }
+
+        function populateSelect(elementId, options) {
+            const select = document.getElementById(elementId);
+            select.innerHTML = '<option value="">All</option>';
+            
+            if (options && options.length > 0) {
+                options.forEach(option => {
+                    const opt = document.createElement('option');
+                    opt.value = option;
+                    opt.textContent = option;
+                    select.appendChild(opt);
+                });
+            }
+        }
+
+        async function fetchData() {
+            const filters = {
+                submarket: document.getElementById('submarket').value,
+                cqeCluster: document.getElementById('cqeCluster').value,
+                periodStart: document.getElementById('periodStart').value,
+                periodEnd: document.getElementById('periodEnd').value,
+                metricName: document.getElementById('metricName').value,
+                usid: document.getElementById('usid').value
+            };
+
+            showLoading();
+
+            try {
+                const queryParams = new URLSearchParams(filters).toString();
+                const response = await fetch(`${API_URL}/data?${queryParams}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    currentData = data;
+                    updateDashboard(data);
+                } else {
+                    // Use sample data if API is not available
+                    generateSampleData();
+                }
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                generateSampleData();
+            }
+        }
+
+        function generateSampleData() {
+            // Generate sample data for demonstration
+            const sampleData = [];
+            const metrics = ['VoLTE_DR', 'Data_Throughput', 'Call_Setup_SR', 'HO_Success_Rate', 'RRC_Setup_SR'];
+            const vendors = ['Nokia', 'Ericsson', 'Huawei', 'Samsung'];
+            const clusters = ['CQE_EAST', 'CQE_WEST', 'CQE_CENTRAL', 'CQE_SOUTH'];
+            const submarkets = ['NYC', 'LA', 'Chicago', 'Houston', 'Phoenix'];
+            
+            for (let i = 0; i < 50; i++) {
+                const target = 95 + Math.random() * 4;
+                const actual = target - Math.random() * 10 - 2;
+                sampleData.push({
+                    USID: `US${10000 + i}`,
+                    METRICNAME: metrics[Math.floor(Math.random() * metrics.length)],
+                    FOCUSAREA_L1CQIACTUAL: actual,
+                    CQITARGET: target,
+                    VENDOR: vendors[Math.floor(Math.random() * vendors.length)],
+                    CQECLUSTER: clusters[Math.floor(Math.random() * clusters.length)],
+                    SUBMKT: submarkets[Math.floor(Math.random() * submarkets.length)],
+                    IDXCONTR: Math.random() * 100
+                });
+            }
+            
+            // Also populate filter options with sample data
+            populateSelect('submarket', submarkets);
+            populateSelect('cqeCluster', clusters);
+            populateSelect('metricName', metrics);
+            
+            currentData = sampleData;
+            updateDashboard(sampleData);
+        }
+
+        function useSampleData() {
+            generateSampleData();
+        }
+
+        function updateDashboard(data) {
+            hideLoading();
+            
+            // Update statistics
+            updateStats(data);
+            
+            // Update table
+            updateTable(data);
+            
+            // Update chart if visible
+            if (document.getElementById('chartContainer').style.display !== 'none') {
+                updateChart(data);
+            }
+        }
+
+        function updateStats(data) {
+            document.getElementById('totalOffenders').textContent = data.length;
+            
+            if (data.length > 0) {
+                const avgScore = data.reduce((sum, row) => sum + (row.FOCUSAREA_L1CQIACTUAL || 0), 0) / data.length;
+                document.getElementById('avgScore').textContent = avgScore.toFixed(2);
+                
+                const critical = data.filter(row => (row.CQITARGET - row.FOCUSAREA_L1CQIACTUAL) > 5).length;
+                document.getElementById('criticalIssues').textContent = critical;
+                
+                const uniqueUsids = new Set(data.map(row => row.USID)).size;
+                document.getElementById('activeUsids').textContent = uniqueUsids;
+            }
+        }
+
+        function updateTable(data) {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+            
+            // Sort by variance (worst offenders first)
+            const sortedData = data.sort((a, b) => {
+                const varianceA = (a.CQITARGET || 0) - (a.FOCUSAREA_L1CQIACTUAL || 0);
+                const varianceB = (b.CQITARGET || 0) - (b.FOCUSAREA_L1CQIACTUAL || 0);
+                return varianceB - varianceA;
+            }).slice(0, 100); // Show top 100 offenders
+            
+            sortedData.forEach(row => {
+                const tr = document.createElement('tr');
+                const variance = (row.CQITARGET || 0) - (row.FOCUSAREA_L1CQIACTUAL || 0);
+                const severity = variance > 5 ? 'high' : variance > 2 ? 'medium' : 'low';
+                
+                tr.innerHTML = `
+                    <td>${row.USID || '-'}</td>
+                    <td>${row.METRICNAME || '-'}</td>
+                    <td>${(row.FOCUSAREA_L1CQIACTUAL || 0).toFixed(2)}</td>
+                    <td>${(row.CQITARGET || 0).toFixed(2)}</td>
+                    <td>${variance.toFixed(2)}</td>
+                    <td>${row.VENDOR || '-'}</td>
+                    <td>${row.CQECLUSTER || '-'}</td>
+                    <td>${row.SUBMKT || '-'}</td>
+                    <td><span class="severity-${severity}">${severity.toUpperCase()}</span></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function showTable() {
+            document.querySelector('.view-btn.active').classList.remove('active');
+            event.target.classList.add('active');
+            document.getElementById('tableContainer').style.display = 'block';
+            document.getElementById('chartContainer').style.display = 'none';
+        }
+
+        function showChart() {
+            document.querySelector('.view-btn.active').classList.remove('active');
+            event.target.classList.add('active');
+            document.getElementById('tableContainer').style.display = 'none';
+            document.getElementById('chartContainer').style.display = 'block';
+            updateChart(currentData);
+        }
+
+        function updateChart(data) {
+            const ctx = document.getElementById('chartContainer').getContext('2d');
+            
+            // Group data by metric for visualization
+            const metricGroups = {};
+            data.forEach(row => {
+                const metric = row.METRICNAME || 'Unknown';
+                if (!metricGroups[metric]) {
+                    metricGroups[metric] = {
+                        actual: [],
+                        target: [],
+                        labels: []
+                    };
+                }
+                metricGroups[metric].actual.push(row.FOCUSAREA_L1CQIACTUAL || 0);
+                metricGroups[metric].target.push(row.CQITARGET || 0);
+                metricGroups[metric].labels.push(row.USID || '');
+            });
+            
+            // Prepare chart data
+            const metrics = Object.keys(metricGroups).slice(0, 5); // Top 5 metrics
+            const chartData = {
+                labels: metrics,
+                datasets: [
+                    {
+                        label: 'Average Actual',
+                        data: metrics.map(m => {
+                            const values = metricGroups[m].actual;
+                            return values.reduce((a, b) => a + b, 0) / values.length;
+                        }),
+                        backgroundColor: 'rgba(102, 126, 234, 0.8)',
+                        borderColor: 'rgba(102, 126, 234, 1)',
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'Average Target',
+                        data: metrics.map(m => {
+                            const values = metricGroups[m].target;
+                            return values.reduce((a, b) => a + b, 0) / values.length;
+                        }),
+                        backgroundColor: 'rgba(72, 187, 120, 0.8)',
+                        borderColor: 'rgba(72, 187, 120, 1)',
+                        borderWidth: 2
+                    }
+                ]
+            };
+            
+            if (chart) {
+                chart.destroy();
+            }
+            
+            chart = new Chart(ctx, {
+                type: 'bar',
+                data: chartData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        title: {
+                            display: true,
+                            text: 'CQI Performance by Metric'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            min: 80
+                        }
+                    }
+                }
+            });
+        }
+
+        function resetFilters() {
+            document.getElementById('submarket').value = '';
+            document.getElementById('cqeCluster').value = '';
+            document.getElementById('metricName').value = '';
+            document.getElementById('usid').value = '';
+            setDefaultDates();
+            fetchData();
+        }
+
+        function exportData() {
+            if (currentData.length === 0) {
+                alert('No data to export');
+                return;
+            }
+            
+            // Convert data to CSV
+            const headers = Object.keys(currentData[0]);
+            const csvContent = [
+                headers.join(','),
+                ...currentData.map(row => headers.map(h => row[h] || '').join(','))
+            ].join('\n');
+            
+            // Download CSV
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `cqi_offenders_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+
+        function showLoading() {
+            document.querySelector('.loading').style.display = 'block';
+            document.querySelector('.table-container').style.display = 'none';
+        }
+
+        function hideLoading() {
+            document.querySelector('.loading').style.display = 'none';
+            document.querySelector('.table-container').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
