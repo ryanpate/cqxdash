@@ -439,25 +439,16 @@ def get_summary_stats():
         cur.execute(query, (start_date, end_date))
         result = cur.fetchone()
 
-        # Helper function to safely convert to int
-        def safe_int(value):
-            if value is None or pd.isna(value):
-                return 0
-            try:
-                return int(float(value))
-            except (ValueError, TypeError):
-                return 0
-
         summary = {
-            'totalUsids': safe_int(result[0]),
-            'totalRecords': safe_int(result[1]),
-            'totalFailures': safe_int(result[2]),
-            'avgFailures': safe_int(result[3]),
-            'maxFailures': safe_int(result[4]),
-            'criticalOffenders': safe_int(result[5]),
-            'highOffenders': safe_int(result[6]),
-            'mediumOffenders': safe_int(result[7]),
-            'lowOffenders': safe_int(result[8]),
+            'totalUsids': result[0] or 0,
+            'totalRecords': result[1] or 0,
+            'totalFailures': int(float(result[2] or 0)),
+            'avgFailures': int(float(result[3] or 0)),
+            'maxFailures': int(float(result[4] or 0)),
+            'criticalOffenders': result[5] or 0,
+            'highOffenders': result[6] or 0,
+            'mediumOffenders': result[7] or 0,
+            'lowOffenders': result[8] or 0,
             'lastUpdated': datetime.now().isoformat()
         }
 
@@ -513,22 +504,10 @@ def get_trend_data():
         # Convert to JSON
         result = df.to_dict('records')
 
-        # Handle NaN values and date formatting
+        # Convert date to ISO format
         for record in result:
-            # Handle date
             if 'DATE' in record and record['DATE'] is not None:
-                if hasattr(record['DATE'], 'isoformat'):
-                    record['DATE'] = record['DATE'].isoformat()
-
-            # Handle numeric fields
-            for field in ['AVG_ACTUAL', 'AVG_TARGET', 'USID_COUNT']:
-                if field in record:
-                    if pd.isna(record[field]):
-                        record[field] = None
-                    elif isinstance(record[field], (float, np.float64)):
-                        record[field] = float(record[field])
-                    elif isinstance(record[field], (np.int64, np.int32)):
-                        record[field] = int(record[field])
+                record['DATE'] = record['DATE'].isoformat()
 
         return jsonify(result)
 
