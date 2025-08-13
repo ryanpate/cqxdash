@@ -90,14 +90,25 @@ def test_connection():
             cur.execute("""
                 SELECT COUNT(*) 
                 FROM CQI2025_CQX_CONTRIBUTION
-                WHERE PERIODSTART >= DATEADD(day, -7, CURRENT_DATE())
+                WHERE PERIODSTART >= DATEADD(day, -7, CURRENT_TIMESTAMP())
             """)
             recent_count = cur.fetchone()[0]
 
+            # Get date range of data
+            cur.execute("""
+                SELECT 
+                    MIN(PERIODSTART) as earliest,
+                    MAX(PERIODSTART) as latest
+                FROM CQI2025_CQX_CONTRIBUTION
+            """)
+            date_range = cur.fetchone()
+
             # Get sample data
             cur.execute("""
-                SELECT USID, METRICNAME, FOCUSAREA_L1CQIACTUAL, CQITARGET, SUBMKT, VENDOR
+                SELECT USID, METRICNAME, EXTRAFAILURES, VENDOR, CQECLUSTER, SUBMKT, PERIODSTART
                 FROM CQI2025_CQX_CONTRIBUTION
+                WHERE PERIODSTART IS NOT NULL AND EXTRAFAILURES > 0
+                ORDER BY EXTRAFAILURES DESC
                 LIMIT 5
             """)
             sample_rows = cur.fetchall()
@@ -105,10 +116,11 @@ def test_connection():
                 {
                     'USID': row[0],
                     'METRICNAME': row[1],
-                    'ACTUAL': row[2],
-                    'TARGET': row[3],
-                    'SUBMKT': row[4],
-                    'VENDOR': row[5]
+                    'EXTRAFAILURES': float(row[2]) if row[2] else 0,
+                    'VENDOR': row[3],
+                    'CLUSTER': row[4],
+                    'SUBMKT': row[5],
+                    'PERIODSTART': row[6].strftime('%Y-%m-%d %H:%M:%S') if row[6] else None
                 }
                 for row in sample_rows
             ]
@@ -124,6 +136,10 @@ def test_connection():
             'table_exists': table_exists,
             'total_rows': row_count,
             'recent_rows_7days': recent_count,
+            'date_range': {
+                'earliest': date_range[0].strftime('%Y-%m-%d %H:%M:%S') if date_range[0] else None,
+                'latest': date_range[1].strftime('%Y-%m-%d %H:%M:%S') if date_range[1] else None
+            } if table_exists else None,
             'sample_data': sample_data
         })
 
@@ -243,13 +259,17 @@ def get_cqi_data():
             query += " AND CQECLUSTER = %s"
             params.append(cqe_cluster)
 
+        # Handle datetime comparisons for PERIODSTART and PERIODEND
+        # Since the columns are datetime, we need to compare with datetime values
         if period_start:
+            # For start date, use beginning of day (00:00:00)
             query += " AND PERIODSTART >= %s"
-            params.append(period_start)
+            params.append(f"{period_start} 00:00:00")
 
         if period_end:
+            # For end date, use end of day (23:59:59)
             query += " AND PERIODEND <= %s"
-            params.append(period_end)
+            params.append(f"{period_end} 23:59:59")
 
         if metric_name:
             query += " AND METRICNAME = %s"
@@ -259,8 +279,8 @@ def get_cqi_data():
             query += " AND USID = %s"
             params.append(usid)
 
-        # Order by contribution index (worst offenders first)
-        query += " ORDER BY IDXCONTR DESC LIMIT 1000"
+        # Order by EXTRAFAILURES (worst offenders first - highest failures)
+        query += " ORDER BY EXTRAFAILURES DESC NULLS LAST LIMIT 1000"
 
         # Execute query
         conn = get_snowflake_connection()
@@ -318,19 +338,21 @@ def get_summary_stats():
         cur = conn.cursor()
 
         # Get date range for last 7 days
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=7)
+        end_date = datetime.now().strftime('%Y-%m-%d 23:59:59')
+        start_date = (datetime.now() - timedelta(days=7)
+                      ).strftime('%Y-%m-%d 00:00:00')
 
         # Query for summary statistics
         query = """
             SELECT 
                 COUNT(DISTINCT USID) as total_usids,
                 COUNT(*) as total_records,
-                AVG(FOCUSAREA_L1CQIACTUAL) as avg_cqi_actual,
-                AVG(CQITARGET) as avg_cqi_target,
-                COUNT(CASE WHEN (CQITARGET - FOCUSAREA_L1CQIACTUAL) > 5 THEN 1 END) as critical_issues,
-                COUNT(CASE WHEN (CQITARGET - FOCUSAREA_L1CQIACTUAL) BETWEEN 2 AND 5 THEN 1 END) as medium_issues,
-                COUNT(CASE WHEN (CQITARGET - FOCUSAREA_L1CQIACTUAL) < 2 THEN 1 END) as low_issues
+                SUM(EXTRAFAILURES) as total_failures,
+                AVG(EXTRAFAILURES) as avg_failures,
+                MAX(EXTRAFAILURES) as max_failures,
+                COUNT(CASE WHEN EXTRAFAILURES > 100 THEN 1 END) as critical_offenders,
+                COUNT(CASE WHEN EXTRAFAILURES BETWEEN 50 AND 100 THEN 1 END) as medium_offenders,
+                COUNT(CASE WHEN EXTRAFAILURES BETWEEN 10 AND 49 THEN 1 END) as low_offenders
             FROM CQI2025_CQX_CONTRIBUTION
             WHERE PERIODSTART >= %s AND PERIODSTART <= %s
         """
@@ -341,11 +363,12 @@ def get_summary_stats():
         summary = {
             'totalUsids': result[0] or 0,
             'totalRecords': result[1] or 0,
-            'avgCqiActual': float(result[2] or 0),
-            'avgCqiTarget': float(result[3] or 0),
-            'criticalIssues': result[4] or 0,
-            'mediumIssues': result[5] or 0,
-            'lowIssues': result[6] or 0,
+            'totalFailures': float(result[2] or 0),
+            'avgFailures': float(result[3] or 0),
+            'maxFailures': float(result[4] or 0),
+            'criticalOffenders': result[5] or 0,
+            'mediumOffenders': result[6] or 0,
+            'lowOffenders': result[7] or 0,
             'lastUpdated': datetime.now().isoformat()
         }
 

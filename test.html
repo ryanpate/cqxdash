@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,44 +14,53 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
         }
+
         .container {
             background: white;
             border-radius: 10px;
             padding: 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
         }
+
         h1 {
             color: #2d3748;
             border-bottom: 3px solid #667eea;
             padding-bottom: 10px;
         }
+
         .test-section {
             margin: 20px 0;
             padding: 20px;
             border-radius: 8px;
             background: #f8f9fa;
         }
+
         .test-header {
             font-weight: bold;
             color: #4a5568;
             margin-bottom: 10px;
             font-size: 1.1em;
         }
+
         .success {
             color: #22c55e;
             font-weight: bold;
         }
+
         .error {
             color: #ef4444;
             font-weight: bold;
         }
+
         .warning {
             color: #f59e0b;
             font-weight: bold;
         }
+
         .info {
             color: #3b82f6;
         }
+
         button {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -62,9 +72,11 @@
             cursor: pointer;
             margin: 5px;
         }
+
         button:hover {
             opacity: 0.9;
         }
+
         pre {
             background: #1e293b;
             color: #e2e8f0;
@@ -73,25 +85,30 @@
             overflow-x: auto;
             font-size: 14px;
         }
+
         .loading {
             color: #6366f1;
             font-style: italic;
         }
+
         table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 10px;
         }
+
         th {
             background: #e2e8f0;
             padding: 10px;
             text-align: left;
             font-weight: bold;
         }
+
         td {
             padding: 10px;
             border-bottom: 1px solid #e2e8f0;
         }
+
         .status-badge {
             display: inline-block;
             padding: 4px 12px;
@@ -99,24 +116,28 @@
             font-size: 14px;
             font-weight: bold;
         }
+
         .status-success {
             background: #dcfce7;
             color: #166534;
         }
+
         .status-error {
             background: #fee2e2;
             color: #991b1b;
         }
+
         .status-warning {
             background: #fef3c7;
             color: #92400e;
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <h1>🔧 CQI Dashboard - Connection Diagnostics</h1>
-        
+
         <div class="test-section">
             <div class="test-header">Quick Actions</div>
             <button onclick="runAllTests()">🚀 Run All Tests</button>
@@ -177,11 +198,11 @@
             const div = document.getElementById('api-health');
             div.innerHTML = '<span class="loading">Testing API...</span>';
             addLog('Testing API health...');
-            
+
             try {
                 const response = await fetch(`${API_URL}/health`);
                 const data = await response.json();
-                
+
                 if (response.ok) {
                     div.innerHTML = `
                         <span class="success">✅ API is running!</span><br>
@@ -215,11 +236,11 @@
             const div = document.getElementById('snowflake-test');
             div.innerHTML = '<span class="loading">Testing Snowflake connection...</span>';
             addLog('Testing Snowflake connection...');
-            
+
             try {
                 const response = await fetch(`${API_URL}/test`);
                 const data = await response.json();
-                
+
                 if (response.ok && data.connection === 'success') {
                     let html = `
                         <span class="success">✅ Snowflake connected successfully!</span><br>
@@ -229,31 +250,37 @@
                         Database: ${data.database}<br>
                         Schema: ${data.schema}<br><br>
                     `;
-                    
+
                     if (data.table_exists) {
                         html += `<span class="success">✅ Table CQI2025_CQX_CONTRIBUTION exists</span><br>`;
                         html += `Total rows: <strong>${data.total_rows.toLocaleString()}</strong><br>`;
                         html += `Recent rows (7 days): <strong>${data.recent_rows_7days.toLocaleString()}</strong><br>`;
-                        
+
+                        if (data.date_range) {
+                            html += `<br><strong>Date Range in Table:</strong><br>`;
+                            html += `Earliest: ${data.date_range.earliest || 'N/A'}<br>`;
+                            html += `Latest: ${data.date_range.latest || 'N/A'}<br>`;
+                        }
+
                         if (data.sample_data && data.sample_data.length > 0) {
-                            html += `<br><strong>Sample Data:</strong>`;
+                            html += `<br><strong>Sample Data (Top Offenders):</strong>`;
                             html += `<table>
                                 <tr>
                                     <th>USID</th>
                                     <th>Metric</th>
-                                    <th>Actual</th>
-                                    <th>Target</th>
-                                    <th>Submarket</th>
+                                    <th>Extra Failures</th>
                                     <th>Vendor</th>
+                                    <th>Cluster</th>
+                                    <th>Period Start</th>
                                 </tr>`;
                             data.sample_data.forEach(row => {
                                 html += `<tr>
                                     <td>${row.USID || 'NULL'}</td>
                                     <td>${row.METRICNAME || 'NULL'}</td>
-                                    <td>${row.ACTUAL || 'NULL'}</td>
-                                    <td>${row.TARGET || 'NULL'}</td>
-                                    <td>${row.SUBMKT || 'NULL'}</td>
+                                    <td><strong>${row.EXTRAFAILURES || 0}</strong></td>
                                     <td>${row.VENDOR || 'NULL'}</td>
+                                    <td>${row.CLUSTER || 'NULL'}</td>
+                                    <td>${row.PERIODSTART || 'NULL'}</td>
                                 </tr>`;
                             });
                             html += `</table>`;
@@ -261,7 +288,7 @@
                     } else {
                         html += `<span class="error">❌ Table CQI2025_CQX_CONTRIBUTION not found!</span>`;
                     }
-                    
+
                     div.innerHTML = html;
                     addLog(`Snowflake test: SUCCESS (${data.total_rows} rows)`, 'success');
                 } else {
@@ -287,29 +314,39 @@
             const div = document.getElementById('data-test');
             div.innerHTML = '<span class="loading">Fetching data...</span>';
             addLog('Testing data retrieval...');
-            
+
+            // Use a wider date range for testing
+            const endDate = new Date().toISOString().split('T')[0];
+            const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
             try {
-                // Test with recent date range
                 const params = new URLSearchParams({
-                    periodStart: '2025-08-01',
-                    periodEnd: '2025-08-12'
+                    periodStart: startDate,
+                    periodEnd: endDate
                 });
-                
+
+                addLog(`Querying date range: ${startDate} to ${endDate}`);
+
                 const response = await fetch(`${API_URL}/data?${params}`);
                 const data = await response.json();
-                
+
                 if (response.ok) {
                     if (Array.isArray(data) && data.length > 0) {
+                        // Sort by EXTRAFAILURES to show top offenders
+                        const sortedData = data.sort((a, b) => (b.EXTRAFAILURES || 0) - (a.EXTRAFAILURES || 0));
+                        const topOffender = sortedData[0];
+
                         div.innerHTML = `
                             <span class="success">✅ Data retrieved successfully!</span><br>
                             <span class="status-badge status-success">OK</span><br>
                             Rows returned: <strong>${data.length}</strong><br>
                             <br>
-                            <strong>First record:</strong><br>
-                            USID: ${data[0].USID || 'NULL'}<br>
-                            Metric: ${data[0].METRICNAME || 'NULL'}<br>
-                            Actual: ${data[0].FOCUSAREA_L1CQIACTUAL || 'NULL'}<br>
-                            Target: ${data[0].CQITARGET || 'NULL'}
+                            <strong>Top Offender:</strong><br>
+                            USID: ${topOffender.USID || 'NULL'}<br>
+                            Metric: ${topOffender.METRICNAME || 'NULL'}<br>
+                            Extra Failures: <strong style="color: red">${topOffender.EXTRAFAILURES || 0}</strong><br>
+                            Vendor: ${topOffender.VENDOR || 'NULL'}<br>
+                            Cluster: ${topOffender.CQECLUSTER || 'NULL'}
                         `;
                         addLog(`Data query: SUCCESS (${data.length} rows)`, 'success');
                     } else if (Array.isArray(data) && data.length === 0) {
@@ -318,7 +355,7 @@
                             <span class="status-badge status-warning">NO DATA</span><br>
                             <br>
                             <strong>Possible reasons:</strong><br>
-                            1. No data for the specified date range (2025-08-01 to 2025-08-12)<br>
+                            1. No data for the specified date range (${startDate} to ${endDate})<br>
                             2. Table might be empty<br>
                             3. Data might be filtered out<br>
                             <br>
@@ -343,35 +380,35 @@
             const div = document.getElementById('filter-test');
             div.innerHTML = '<span class="loading">Loading filter options...</span>';
             addLog('Testing filter options...');
-            
+
             try {
                 const response = await fetch(`${API_URL}/filters`);
                 const data = await response.json();
-                
+
                 if (response.ok && !data.error) {
                     let html = `<span class="success">✅ Filter options loaded!</span><br>`;
                     html += '<span class="status-badge status-success">OK</span><br><br>';
-                    
+
                     if (data.submarkets) {
                         html += `<strong>Submarkets (${data.submarkets.length}):</strong><br>`;
                         html += data.submarkets.slice(0, 5).join(', ');
                         if (data.submarkets.length > 5) html += '...';
                         html += '<br><br>';
                     }
-                    
+
                     if (data.cqeClusters) {
                         html += `<strong>CQE Clusters (${data.cqeClusters.length}):</strong><br>`;
                         html += data.cqeClusters.slice(0, 5).join(', ');
                         if (data.cqeClusters.length > 5) html += '...';
                         html += '<br><br>';
                     }
-                    
+
                     if (data.metricNames) {
                         html += `<strong>Metrics (${data.metricNames.length}):</strong><br>`;
                         html += data.metricNames.slice(0, 5).join(', ');
                         if (data.metricNames.length > 5) html += '...';
                     }
-                    
+
                     div.innerHTML = html;
                     addLog(`Filter test: SUCCESS (${data.submarkets?.length || 0} submarkets, ${data.cqeClusters?.length || 0} clusters, ${data.metricNames?.length || 0} metrics)`, 'success');
                 } else {
@@ -387,21 +424,21 @@
         async function runAllTests() {
             logContent = [];
             addLog('Starting comprehensive test suite...');
-            
+
             // Run tests in sequence
             const apiOk = await testAPIHealth();
-            
+
             if (apiOk) {
                 await new Promise(resolve => setTimeout(resolve, 500));
                 await testSnowflake();
-                
+
                 await new Promise(resolve => setTimeout(resolve, 500));
                 await testData();
-                
+
                 await new Promise(resolve => setTimeout(resolve, 500));
                 await testFilters();
             }
-            
+
             addLog('All tests completed!');
         }
 
@@ -411,4 +448,5 @@
         });
     </script>
 </body>
+
 </html>

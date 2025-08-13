@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -237,6 +238,11 @@
             color: #2d3748;
         }
 
+        td:first-child {
+            font-weight: bold;
+            color: #667eea;
+        }
+
         tr:hover {
             background: #f7fafc;
         }
@@ -291,7 +297,9 @@
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         .error-message {
@@ -312,11 +320,12 @@
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
-            <h1>CQI Offenders Dashboard</h1>
-            <p>Real-time monitoring of CQX metrics and performance indicators</p>
+            <h1>CQI Offenders Dashboard - Extra Failures Tracking</h1>
+            <p>Real-time monitoring of network failures and performance degradation by USID</p>
         </div>
 
         <div class="filters-section">
@@ -364,22 +373,22 @@
             <div class="stat-card">
                 <h3>Total Offenders</h3>
                 <div class="value" id="totalOffenders">0</div>
-                <div class="change negative">↑ 12% from last period</div>
+                <div class="change negative" id="offenderChange">Loading...</div>
             </div>
             <div class="stat-card">
-                <h3>Average CQI Score</h3>
-                <div class="value" id="avgScore">0.00</div>
-                <div class="change positive">↑ 5% improvement</div>
+                <h3>Total Extra Failures</h3>
+                <div class="value" id="totalFailures">0</div>
+                <div class="change negative" id="failureChange">Loading...</div>
             </div>
             <div class="stat-card">
-                <h3>Critical Issues</h3>
-                <div class="value" id="criticalIssues">0</div>
-                <div class="change negative">↑ 3 new issues</div>
+                <h3>Critical Offenders</h3>
+                <div class="value" id="criticalOffenders">0</div>
+                <div class="change negative" id="criticalChange">Failures > 100</div>
             </div>
             <div class="stat-card">
                 <h3>Active USIDs</h3>
                 <div class="value" id="activeUsids">0</div>
-                <div class="change positive">↑ 8% coverage</div>
+                <div class="change positive" id="usidChange">Loading...</div>
             </div>
         </div>
 
@@ -391,7 +400,7 @@
                     <button class="view-btn" onclick="showChart()">Chart</button>
                 </div>
             </div>
-            
+
             <div id="tableContainer">
                 <div class="loading">
                     <div class="loading-spinner"></div>
@@ -401,14 +410,12 @@
                     <table id="dataTable">
                         <thead>
                             <tr>
+                                <th>Rank</th>
                                 <th>USID</th>
                                 <th>Metric Name</th>
-                                <th>CQI Score</th>
-                                <th>Target</th>
-                                <th>Variance</th>
+                                <th>Extra Failures</th>
                                 <th>Vendor</th>
                                 <th>CQE Cluster</th>
-                                <th>Submarket</th>
                                 <th>Severity</th>
                             </tr>
                         </thead>
@@ -417,7 +424,7 @@
                     </table>
                 </div>
             </div>
-            
+
             <canvas id="chartContainer"></canvas>
         </div>
     </div>
@@ -425,21 +432,64 @@
     <script>
         // API endpoint - Update this to your Flask server URL
         const API_URL = 'http://localhost:5000/api';
-        
+
         let currentData = [];
         let chart = null;
+        let apiAvailable = false;
 
         // Initialize dashboard
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             setDefaultDates();
-            loadFilterOptions();
-            fetchData();
+            checkAPIConnection();
         });
+
+        async function checkAPIConnection() {
+            try {
+                const response = await fetch(`${API_URL}/health`);
+                if (response.ok) {
+                    apiAvailable = true;
+                    console.log('✅ Connected to Flask API');
+                    showSuccessMessage('Connected to Snowflake API successfully!');
+                    loadFilterOptions();
+                    fetchData();
+                } else {
+                    handleAPIError();
+                }
+            } catch (error) {
+                console.error('❌ Flask API not reachable:', error);
+                handleAPIError();
+            }
+        }
+
+        function handleAPIError() {
+            apiAvailable = false;
+            showErrorMessage('Flask API is not running. Using sample data. <br>To connect to Snowflake: <br>1. Run: python app.py <br>2. Refresh this page');
+            useSampleData();
+            setTimeout(() => {
+                fetchData();
+            }, 1000);
+        }
+
+        function showErrorMessage(message) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'error-message';
+            alertDiv.innerHTML = message;
+            document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.filters-section'));
+            setTimeout(() => alertDiv.remove(), 10000);
+        }
+
+        function showSuccessMessage(message) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'success-message';
+            alertDiv.innerHTML = message;
+            document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.filters-section'));
+            setTimeout(() => alertDiv.remove(), 5000);
+        }
 
         function setDefaultDates() {
             const today = new Date();
             const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-            
+
             document.getElementById('periodEnd').value = today.toISOString().split('T')[0];
             document.getElementById('periodStart').value = lastWeek.toISOString().split('T')[0];
         }
@@ -448,10 +498,10 @@
             try {
                 // Fetch filter options from API
                 const response = await fetch(`${API_URL}/filters`);
-                
+
                 if (response.ok) {
                     const data = await response.json();
-                    
+
                     populateSelect('submarket', data.submarkets);
                     populateSelect('cqeCluster', data.cqeClusters);
                     populateSelect('metricName', data.metricNames);
@@ -468,7 +518,7 @@
         function populateSelect(elementId, options) {
             const select = document.getElementById(elementId);
             select.innerHTML = '<option value="">All</option>';
-            
+
             if (options && options.length > 0) {
                 options.forEach(option => {
                     const opt = document.createElement('option');
@@ -491,16 +541,23 @@
 
             showLoading();
 
+            if (!apiAvailable) {
+                // Use sample data if API is not available
+                generateSampleData();
+                return;
+            }
+
             try {
                 const queryParams = new URLSearchParams(filters).toString();
                 const response = await fetch(`${API_URL}/data?${queryParams}`);
-                
+
                 if (response.ok) {
                     const data = await response.json();
                     currentData = data;
                     updateDashboard(data);
                 } else {
-                    // Use sample data if API is not available
+                    // Use sample data if API returns an error
+                    console.error('API returned error:', response.status);
                     generateSampleData();
                 }
             } catch (error) {
@@ -516,27 +573,40 @@
             const vendors = ['Nokia', 'Ericsson', 'Huawei', 'Samsung'];
             const clusters = ['CQE_EAST', 'CQE_WEST', 'CQE_CENTRAL', 'CQE_SOUTH'];
             const submarkets = ['NYC', 'LA', 'Chicago', 'Houston', 'Phoenix'];
-            
+
             for (let i = 0; i < 50; i++) {
-                const target = 95 + Math.random() * 4;
-                const actual = target - Math.random() * 10 - 2;
+                // Generate random EXTRAFAILURES with realistic distribution
+                let failures;
+                const rand = Math.random();
+                if (rand > 0.95) {
+                    // 5% critical offenders
+                    failures = Math.floor(Math.random() * 400) + 100;
+                } else if (rand > 0.8) {
+                    // 15% high offenders
+                    failures = Math.floor(Math.random() * 50) + 50;
+                } else if (rand > 0.5) {
+                    // 30% medium offenders
+                    failures = Math.floor(Math.random() * 40) + 10;
+                } else {
+                    // 50% low or no failures
+                    failures = Math.floor(Math.random() * 10);
+                }
+
                 sampleData.push({
                     USID: `US${10000 + i}`,
                     METRICNAME: metrics[Math.floor(Math.random() * metrics.length)],
-                    FOCUSAREA_L1CQIACTUAL: actual,
-                    CQITARGET: target,
+                    EXTRAFAILURES: failures,
                     VENDOR: vendors[Math.floor(Math.random() * vendors.length)],
                     CQECLUSTER: clusters[Math.floor(Math.random() * clusters.length)],
-                    SUBMKT: submarkets[Math.floor(Math.random() * submarkets.length)],
-                    IDXCONTR: Math.random() * 100
+                    SUBMKT: submarkets[Math.floor(Math.random() * submarkets.length)]
                 });
             }
-            
+
             // Also populate filter options with sample data
             populateSelect('submarket', submarkets);
             populateSelect('cqeCluster', clusters);
             populateSelect('metricName', metrics);
-            
+
             currentData = sampleData;
             updateDashboard(sampleData);
         }
@@ -547,13 +617,13 @@
 
         function updateDashboard(data) {
             hideLoading();
-            
+
             // Update statistics
             updateStats(data);
-            
+
             // Update table
             updateTable(data);
-            
+
             // Update chart if visible
             if (document.getElementById('chartContainer').style.display !== 'none') {
                 updateChart(data);
@@ -561,46 +631,70 @@
         }
 
         function updateStats(data) {
-            document.getElementById('totalOffenders').textContent = data.length;
-            
+            // Count total offenders (records with EXTRAFAILURES > 0)
+            const offenders = data.filter(row => (row.EXTRAFAILURES || 0) > 0);
+            document.getElementById('totalOffenders').textContent = offenders.length;
+
             if (data.length > 0) {
-                const avgScore = data.reduce((sum, row) => sum + (row.FOCUSAREA_L1CQIACTUAL || 0), 0) / data.length;
-                document.getElementById('avgScore').textContent = avgScore.toFixed(2);
-                
-                const critical = data.filter(row => (row.CQITARGET - row.FOCUSAREA_L1CQIACTUAL) > 5).length;
-                document.getElementById('criticalIssues').textContent = critical;
-                
+                // Calculate total failures
+                const totalFailures = data.reduce((sum, row) => sum + (row.EXTRAFAILURES || 0), 0);
+                document.getElementById('totalFailures').textContent = totalFailures.toLocaleString();
+
+                // Count critical offenders (EXTRAFAILURES > 100)
+                const critical = data.filter(row => (row.EXTRAFAILURES || 0) > 100).length;
+                document.getElementById('criticalOffenders').textContent = critical;
+
+                // Count unique USIDs
                 const uniqueUsids = new Set(data.map(row => row.USID)).size;
                 document.getElementById('activeUsids').textContent = uniqueUsids;
+
+                // Update change indicators
+                document.getElementById('offenderChange').textContent = `${offenders.length} with failures`;
+                document.getElementById('failureChange').textContent = `Avg: ${(totalFailures / data.length).toFixed(1)} per record`;
+                document.getElementById('criticalChange').textContent = `${critical} critical (>100 failures)`;
+                document.getElementById('usidChange').textContent = `${uniqueUsids} unique sites`;
             }
         }
 
         function updateTable(data) {
             const tbody = document.getElementById('tableBody');
             tbody.innerHTML = '';
-            
-            // Sort by variance (worst offenders first)
+
+            // Sort by EXTRAFAILURES (worst offenders first)
             const sortedData = data.sort((a, b) => {
-                const varianceA = (a.CQITARGET || 0) - (a.FOCUSAREA_L1CQIACTUAL || 0);
-                const varianceB = (b.CQITARGET || 0) - (b.FOCUSAREA_L1CQIACTUAL || 0);
-                return varianceB - varianceA;
+                const failuresA = a.EXTRAFAILURES || 0;
+                const failuresB = b.EXTRAFAILURES || 0;
+                return failuresB - failuresA;
             }).slice(0, 100); // Show top 100 offenders
-            
-            sortedData.forEach(row => {
+
+            sortedData.forEach((row, index) => {
                 const tr = document.createElement('tr');
-                const variance = (row.CQITARGET || 0) - (row.FOCUSAREA_L1CQIACTUAL || 0);
-                const severity = variance > 5 ? 'high' : variance > 2 ? 'medium' : 'low';
-                
+                const failures = row.EXTRAFAILURES || 0;
+
+                // Determine severity based on EXTRAFAILURES count
+                let severity, severityClass;
+                if (failures > 100) {
+                    severity = 'CRITICAL';
+                    severityClass = 'severity-high';
+                } else if (failures > 50) {
+                    severity = 'HIGH';
+                    severityClass = 'severity-high';
+                } else if (failures > 10) {
+                    severity = 'MEDIUM';
+                    severityClass = 'severity-medium';
+                } else {
+                    severity = 'LOW';
+                    severityClass = 'severity-low';
+                }
+
                 tr.innerHTML = `
+                    <td><strong>#${index + 1}</strong></td>
                     <td>${row.USID || '-'}</td>
                     <td>${row.METRICNAME || '-'}</td>
-                    <td>${(row.FOCUSAREA_L1CQIACTUAL || 0).toFixed(2)}</td>
-                    <td>${(row.CQITARGET || 0).toFixed(2)}</td>
-                    <td>${variance.toFixed(2)}</td>
+                    <td><strong>${failures.toLocaleString()}</strong></td>
                     <td>${row.VENDOR || '-'}</td>
                     <td>${row.CQECLUSTER || '-'}</td>
-                    <td>${row.SUBMKT || '-'}</td>
-                    <td><span class="severity-${severity}">${severity.toUpperCase()}</span></td>
+                    <td><span class="${severityClass}">${severity}</span></td>
                 `;
                 tbody.appendChild(tr);
             });
@@ -623,55 +717,55 @@
 
         function updateChart(data) {
             const ctx = document.getElementById('chartContainer').getContext('2d');
-            
-            // Group data by metric for visualization
+
+            // Group data by metric and sum EXTRAFAILURES
             const metricGroups = {};
             data.forEach(row => {
                 const metric = row.METRICNAME || 'Unknown';
+                const failures = row.EXTRAFAILURES || 0;
+
                 if (!metricGroups[metric]) {
                     metricGroups[metric] = {
-                        actual: [],
-                        target: [],
-                        labels: []
+                        totalFailures: 0,
+                        count: 0,
+                        maxFailures: 0
                     };
                 }
-                metricGroups[metric].actual.push(row.FOCUSAREA_L1CQIACTUAL || 0);
-                metricGroups[metric].target.push(row.CQITARGET || 0);
-                metricGroups[metric].labels.push(row.USID || '');
+                metricGroups[metric].totalFailures += failures;
+                metricGroups[metric].count += 1;
+                metricGroups[metric].maxFailures = Math.max(metricGroups[metric].maxFailures, failures);
             });
-            
+
+            // Sort metrics by total failures and get top 10
+            const sortedMetrics = Object.entries(metricGroups)
+                .sort((a, b) => b[1].totalFailures - a[1].totalFailures)
+                .slice(0, 10);
+
             // Prepare chart data
-            const metrics = Object.keys(metricGroups).slice(0, 5); // Top 5 metrics
             const chartData = {
-                labels: metrics,
+                labels: sortedMetrics.map(([metric, _]) => metric),
                 datasets: [
                     {
-                        label: 'Average Actual',
-                        data: metrics.map(m => {
-                            const values = metricGroups[m].actual;
-                            return values.reduce((a, b) => a + b, 0) / values.length;
-                        }),
-                        backgroundColor: 'rgba(102, 126, 234, 0.8)',
-                        borderColor: 'rgba(102, 126, 234, 1)',
+                        label: 'Total Extra Failures',
+                        data: sortedMetrics.map(([_, data]) => data.totalFailures),
+                        backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                        borderColor: 'rgba(239, 68, 68, 1)',
                         borderWidth: 2
                     },
                     {
-                        label: 'Average Target',
-                        data: metrics.map(m => {
-                            const values = metricGroups[m].target;
-                            return values.reduce((a, b) => a + b, 0) / values.length;
-                        }),
-                        backgroundColor: 'rgba(72, 187, 120, 0.8)',
-                        borderColor: 'rgba(72, 187, 120, 1)',
+                        label: 'Max Failures (Single USID)',
+                        data: sortedMetrics.map(([_, data]) => data.maxFailures),
+                        backgroundColor: 'rgba(251, 146, 60, 0.8)',
+                        borderColor: 'rgba(251, 146, 60, 1)',
                         borderWidth: 2
                     }
                 ]
             };
-            
+
             if (chart) {
                 chart.destroy();
             }
-            
+
             chart = new Chart(ctx, {
                 type: 'bar',
                 data: chartData,
@@ -684,13 +778,24 @@
                         },
                         title: {
                             display: true,
-                            text: 'CQI Performance by Metric'
+                            text: 'Top Offending Metrics by Extra Failures'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                afterLabel: function (context) {
+                                    const metric = sortedMetrics[context.dataIndex];
+                                    return `Records: ${metric[1].count}`;
+                                }
+                            }
                         }
                     },
                     scales: {
                         y: {
-                            beginAtZero: false,
-                            min: 80
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Extra Failures Count'
+                            }
                         }
                     }
                 }
@@ -711,20 +816,36 @@
                 alert('No data to export');
                 return;
             }
-            
-            // Convert data to CSV
-            const headers = Object.keys(currentData[0]);
+
+            // Sort data by EXTRAFAILURES for export
+            const sortedData = currentData.sort((a, b) => (b.EXTRAFAILURES || 0) - (a.EXTRAFAILURES || 0));
+
+            // Add rank to each row
+            const exportData = sortedData.map((row, index) => ({
+                Rank: index + 1,
+                USID: row.USID || '',
+                MetricName: row.METRICNAME || '',
+                ExtraFailures: row.EXTRAFAILURES || 0,
+                Vendor: row.VENDOR || '',
+                Cluster: row.CQECLUSTER || '',
+                Submarket: row.SUBMKT || '',
+                PeriodStart: row.PERIODSTART || '',
+                PeriodEnd: row.PERIODEND || ''
+            }));
+
+            // Convert to CSV
+            const headers = Object.keys(exportData[0]);
             const csvContent = [
                 headers.join(','),
-                ...currentData.map(row => headers.map(h => row[h] || '').join(','))
+                ...exportData.map(row => headers.map(h => row[h]).join(','))
             ].join('\n');
-            
+
             // Download CSV
             const blob = new Blob([csvContent], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `cqi_offenders_${new Date().toISOString().split('T')[0]}.csv`;
+            a.download = `cqi_offenders_failures_${new Date().toISOString().split('T')[0]}.csv`;
             a.click();
             window.URL.revokeObjectURL(url);
         }
@@ -740,4 +861,5 @@
         }
     </script>
 </body>
+
 </html>
