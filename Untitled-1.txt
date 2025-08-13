@@ -1,0 +1,38 @@
+LTE_PS_ACBACC_25                                   | 442106483  | 112564   | 87.76      | 87.84
+LTE_PS_XR_TOT_25                                   | 441964015  | 112564   | 85.59      | 85.40
+LTE_DL_TPUT_NOENDC5GCOV_25                         | 441608436  | 112565   | 93.48      | 90.94
+VOLTE_RAN_ACBACC_25_ALL                            | 431784488  | 112555   | 91.15      | 90.81
+OV_ENDC_DL_DRB_TPUT_25                             | 178087379  | 71631    | 93.88      | 91.15
+VOLTE_CDR_MOMT_ACC_25                              | 121659128  | 116001   | 91.18      | 90.91
+VOICE_CDR_RET_25                                   | 121627517  | 114321   | 90.51      | 90.47
+LTE_IQI_NS_ESO_25                                  | 121054212  | 113388   | 92.56      | 92.99
+LTE_IQI_RSRP_25                                    | 121053968  | 113388   | 83.43      | 83.62
+LTE_IQI_QUALITY_25                                 | 121053568  | 113388   | 90.59      | 90.47
+ALLRAT_DL_TPUT_25                                  | 120782635  | 113128   | 93.74      | 91.05
+ALLRAT_DACC_25                                     | 120565979  | 112840   | 87.80      | 87.87
+ALLRAT_DDR_25                                      | 120562071  | 112840   | 85.69      | 85.40
+ALLRAT_UL_TPUT_25                                  | 120284637  | 113927   | 90.63      | 88.58
+LTE_NOENDC_UL_TPUT_25                              | 119851989  | 113912   | 90.62      | 88.58
+NSA_UL_TPUT_25                                     | 82603033   | 112591   | 90.74      | 88.59
+NR_SA_DRBRET_25                                    | 77882874   | 36639    | 86.06      | 85.89
+NR_SA_DACC_25                                      | 77556141   | 36607    | 87.84      | 88.02
+SA_UL_TPUT_25                                      | 44771116   | 112216   | 90.91      | 88.77
+CQI2025                                            | 6334388    | 0        | 90.88      | 90.28
+VOLTE_CDR_RET_25                                   | 5211872    | 0        | 90.45      | 90.42
+VOLTE_FEMTO_CDR_RET_25                             | 5211872    | 0        | 90.45      | 90.42
+VOLTE_WIFI_CDR_25                                  | 5170484    | 0        | 90.45      | 90.43
+LSMALL_PS_ACBACC_FR_25                             | 622408     | 0        | 88.03      | 88.03
+LSMALL_PS_XR_TOT_25                                | 622352     | 0        | 85.47      | 84.78
+LSMALL_DL_TPUT_RAW_25                              | 344990     | 0        | 92.92      | 89.67
+
+V-CDR = VOICE_CDR_RET_25
+NS/ESO = LTE_IQI_NS_ESO_25
+Quality RSRP = LTE_IQI_RSRP_25
+Quality RSRQ = LTE_IQI_QUALITY_25
+V-ACC = VOLTE_RAN_ACBACC_25_ALL
+V-ACC-E2E = VOLTE_CDR_MOMT_ACC_25
+D-ACC = ALLRAT_DACC_25
+DLTPUT = ALLRAT_DL_TPUT_25
+ULTPUT = ALLRAT_UL_TPUT_25
+D-RET = ALLRAT_DDR_25
+WIFI-RET = VOLTE_WIFI_CDR_25
