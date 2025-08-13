@@ -157,6 +157,11 @@
             color: #2d3748;
             font-size: 2rem;
             font-weight: 700;
+            cursor: help;
+        }
+
+        .stat-card .value[title] {
+            border-bottom: 2px dotted #667eea;
         }
 
         .stat-card .change {
@@ -236,6 +241,16 @@
             padding: 12px;
             border-bottom: 1px solid #e2e8f0;
             color: #2d3748;
+        }
+
+        td:first-child {
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        td strong[title] {
+            cursor: help;
+            border-bottom: 1px dotted #667eea;
         }
 
         tr:hover {
@@ -431,6 +446,50 @@
         let currentData = [];
         let chart = null;
         let apiAvailable = false;
+        let metricMapping = {};
+
+        // Utility function to format large numbers compactly
+        function formatCompactNumber(num) {
+            if (num === null || num === undefined) return '0';
+
+            num = Math.round(num); // Ensure integer
+
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+            } else if (num >= 1000) {
+                return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+            } else {
+                return num.toString();
+            }
+        }
+
+        // Utility function to get full number with commas for tooltips
+        function formatFullNumber(num) {
+            if (num === null || num === undefined) return '0';
+            return Math.round(num).toLocaleString();
+        }
+        let metricMapping = {};
+
+        // Utility function to format large numbers compactly
+        function formatCompactNumber(num) {
+            if (num === null || num === undefined) return '0';
+
+            num = Math.round(num); // Ensure integer
+
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+            } else if (num >= 1000) {
+                return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+            } else {
+                return num.toString();
+            }
+        }
+
+        // Utility function to get full number with commas for tooltips
+        function formatFullNumber(num) {
+            if (num === null || num === undefined) return '0';
+            return Math.round(num).toLocaleString();
+        }
 
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', function () {
@@ -496,6 +555,11 @@
 
                 if (response.ok) {
                     const data = await response.json();
+
+                    // Store metric mapping if available
+                    if (data.metricMapping) {
+                        metricMapping = data.metricMapping;
+                    }
 
                     populateSelect('submarket', data.submarkets);
                     populateSelect('cqeCluster', data.cqeClusters);
@@ -564,7 +628,7 @@
         function generateSampleData() {
             // Generate sample data for demonstration
             const sampleData = [];
-            const metrics = ['VoLTE_DR', 'Data_Throughput', 'Call_Setup_SR', 'HO_Success_Rate', 'RRC_Setup_SR'];
+            const metrics = ['V-CDR', 'NS/ESO', 'Quality RSRP', 'Quality RSRQ', 'V-ACC', 'V-ACC-E2E', 'D-ACC', 'DLTPUT', 'ULTPUT', 'D-RET', 'WIFI-RET'];
             const vendors = ['Nokia', 'Ericsson', 'Huawei', 'Samsung'];
             const clusters = ['CQE_EAST', 'CQE_WEST', 'CQE_CENTRAL', 'CQE_SOUTH'];
             const submarkets = ['NYC', 'LA', 'Chicago', 'Houston', 'Phoenix'];
@@ -574,22 +638,23 @@
                 let failures;
                 const rand = Math.random();
                 if (rand > 0.95) {
-                    // 5% critical offenders
-                    failures = Math.floor(Math.random() * 400) + 100;
+                    // 5% critical offenders - very high numbers
+                    failures = Math.floor(Math.random() * 50000) + 10000;
                 } else if (rand > 0.8) {
                     // 15% high offenders
-                    failures = Math.floor(Math.random() * 50) + 50;
+                    failures = Math.floor(Math.random() * 5000) + 1000;
                 } else if (rand > 0.5) {
                     // 30% medium offenders
-                    failures = Math.floor(Math.random() * 40) + 10;
+                    failures = Math.floor(Math.random() * 500) + 100;
                 } else {
                     // 50% low or no failures
-                    failures = Math.floor(Math.random() * 10);
+                    failures = Math.floor(Math.random() * 100);
                 }
 
                 sampleData.push({
                     USID: `US${10000 + i}`,
                     METRICNAME: metrics[Math.floor(Math.random() * metrics.length)],
+                    METRIC_DISPLAY: metrics[Math.floor(Math.random() * metrics.length)],
                     EXTRAFAILURES: failures,
                     VENDOR: vendors[Math.floor(Math.random() * vendors.length)],
                     CQECLUSTER: clusters[Math.floor(Math.random() * clusters.length)],
@@ -633,10 +698,11 @@
             if (data.length > 0) {
                 // Calculate total failures
                 const totalFailures = data.reduce((sum, row) => sum + (row.EXTRAFAILURES || 0), 0);
-                document.getElementById('totalFailures').textContent = totalFailures.toLocaleString();
+                document.getElementById('totalFailures').textContent = formatCompactNumber(totalFailures);
+                document.getElementById('totalFailures').title = `Total: ${formatFullNumber(totalFailures)}`;
 
-                // Count critical offenders (EXTRAFAILURES > 100)
-                const critical = data.filter(row => (row.EXTRAFAILURES || 0) > 100).length;
+                // Count critical offenders (EXTRAFAILURES > 10000)
+                const critical = data.filter(row => (row.EXTRAFAILURES || 0) > 10000).length;
                 document.getElementById('criticalOffenders').textContent = critical;
 
                 // Count unique USIDs
@@ -645,8 +711,9 @@
 
                 // Update change indicators
                 document.getElementById('offenderChange').textContent = `${offenders.length} with failures`;
-                document.getElementById('failureChange').textContent = `Avg: ${(totalFailures / data.length).toFixed(1)} per record`;
-                document.getElementById('criticalChange').textContent = `${critical} critical (>100 failures)`;
+                const avgFailures = totalFailures / data.length;
+                document.getElementById('failureChange').textContent = `Avg: ${formatCompactNumber(avgFailures)} per record`;
+                document.getElementById('criticalChange').textContent = `${critical} sites > 10K failures`;
                 document.getElementById('usidChange').textContent = `${uniqueUsids} unique sites`;
             }
         }
@@ -664,17 +731,18 @@
 
             sortedData.forEach((row, index) => {
                 const tr = document.createElement('tr');
-                const failures = row.EXTRAFAILURES || 0;
+                const failures = Math.round(row.EXTRAFAILURES || 0);
 
                 // Determine severity based on EXTRAFAILURES count
+                // Adjusted thresholds for potentially larger numbers
                 let severity, severityClass;
-                if (failures > 100) {
+                if (failures > 10000) {
                     severity = 'CRITICAL';
                     severityClass = 'severity-high';
-                } else if (failures > 50) {
+                } else if (failures > 1000) {
                     severity = 'HIGH';
                     severityClass = 'severity-high';
-                } else if (failures > 10) {
+                } else if (failures > 100) {
                     severity = 'MEDIUM';
                     severityClass = 'severity-medium';
                 } else {
@@ -682,11 +750,17 @@
                     severityClass = 'severity-low';
                 }
 
+                // Use display name if available, otherwise use original metric name
+                const metricDisplay = row.METRIC_DISPLAY || row.METRICNAME || '-';
+
+                // Create cell with compact number and tooltip showing full number
+                const failuresCell = `<strong title="${formatFullNumber(failures)} failures">${formatCompactNumber(failures)}</strong>`;
+
                 tr.innerHTML = `
                     <td><strong>#${index + 1}</strong></td>
                     <td>${row.USID || '-'}</td>
-                    <td>${row.METRICNAME || '-'}</td>
-                    <td><strong>${failures.toLocaleString()}</strong></td>
+                    <td>${metricDisplay}</td>
+                    <td>${failuresCell}</td>
                     <td>${row.VENDOR || '-'}</td>
                     <td>${row.CQECLUSTER || '-'}</td>
                     <td><span class="${severityClass}">${severity}</span></td>
@@ -716,8 +790,8 @@
             // Group data by metric and sum EXTRAFAILURES
             const metricGroups = {};
             data.forEach(row => {
-                const metric = row.METRICNAME || 'Unknown';
-                const failures = row.EXTRAFAILURES || 0;
+                const metric = row.METRIC_DISPLAY || row.METRICNAME || 'Unknown';
+                const failures = Math.round(row.EXTRAFAILURES || 0);
 
                 if (!metricGroups[metric]) {
                     metricGroups[metric] = {
@@ -777,6 +851,10 @@
                         },
                         tooltip: {
                             callbacks: {
+                                label: function (context) {
+                                    const value = context.parsed.y;
+                                    return `${context.dataset.label}: ${formatFullNumber(value)}`;
+                                },
                                 afterLabel: function (context) {
                                     const metric = sortedMetrics[context.dataIndex];
                                     return `Records: ${metric[1].count}`;
@@ -790,6 +868,11 @@
                             title: {
                                 display: true,
                                 text: 'Extra Failures Count'
+                            },
+                            ticks: {
+                                callback: function (value) {
+                                    return formatCompactNumber(value);
+                                }
                             }
                         }
                     }
@@ -812,11 +895,33 @@
                 return;
             }
 
-            // Convert data to CSV
-            const headers = Object.keys(currentData[0]);
+            // Sort data by EXTRAFAILURES for export
+            const sortedData = currentData.sort((a, b) => (b.EXTRAFAILURES || 0) - (a.EXTRAFAILURES || 0));
+
+            // Add rank to each row
+            const exportData = sortedData.map((row, index) => ({
+                Rank: index + 1,
+                USID: row.USID || '',
+                MetricName: row.METRIC_DISPLAY || row.METRICNAME || '',
+                ExtraFailures: Math.round(row.EXTRAFAILURES || 0),
+                Vendor: row.VENDOR || '',
+                Cluster: row.CQECLUSTER || '',
+                Submarket: row.SUBMKT || '',
+                PeriodStart: row.PERIODSTART || '',
+                PeriodEnd: row.PERIODEND || ''
+            }));
+
+            // Convert to CSV
+            const headers = Object.keys(exportData[0]);
             const csvContent = [
                 headers.join(','),
-                ...currentData.map(row => headers.map(h => row[h] || '').join(','))
+                ...exportData.map(row => headers.map(h => {
+                    // Properly escape CSV values
+                    const value = String(row[h] || '');
+                    return value.includes(',') || value.includes('"') || value.includes('\n')
+                        ? `"${value.replace(/"/g, '""')}"`
+                        : value;
+                }).join(','))
             ].join('\n');
 
             // Download CSV
@@ -824,7 +929,7 @@
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `cqi_offenders_${new Date().toISOString().split('T')[0]}.csv`;
+            a.download = `cqi_offenders_failures_${new Date().toISOString().split('T')[0]}.csv`;
             a.click();
             window.URL.revokeObjectURL(url);
         }
