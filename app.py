@@ -1,510 +1,438 @@
-"""
-CQI Dashboard Flask API
-Connects to Snowflake and serves data to the web dashboard
-"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CQI Dashboard - Connection Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2d3748;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 8px;
+            background: #f8f9fa;
+        }
+        .test-header {
+            font-weight: bold;
+            color: #4a5568;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        .success {
+            color: #22c55e;
+            font-weight: bold;
+        }
+        .error {
+            color: #ef4444;
+            font-weight: bold;
+        }
+        .warning {
+            color: #f59e0b;
+            font-weight: bold;
+        }
+        .info {
+            color: #3b82f6;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 14px;
+        }
+        .loading {
+            color: #6366f1;
+            font-style: italic;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th {
+            background: #e2e8f0;
+            padding: 10px;
+            text-align: left;
+            font-weight: bold;
+        }
+        td {
+            padding: 10px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .status-success {
+            background: #dcfce7;
+            color: #166534;
+        }
+        .status-error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .status-warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 CQI Dashboard - Connection Diagnostics</h1>
+        
+        <div class="test-section">
+            <div class="test-header">Quick Actions</div>
+            <button onclick="runAllTests()">🚀 Run All Tests</button>
+            <button onclick="testAPIHealth()">💓 Test API Health</button>
+            <button onclick="testSnowflake()">❄️ Test Snowflake</button>
+            <button onclick="testData()">📊 Test Data Query</button>
+            <button onclick="testFilters()">🔍 Test Filters</button>
+        </div>
 
-from flask import Flask, jsonify, request
-from flask_cors import CORS
-import snowflake.connector as sc
-import pandas as pd
-from datetime import datetime, timedelta
-import os
-from functools import lru_cache
-import logging
+        <div class="test-section">
+            <div class="test-header">1. API Health Check</div>
+            <div id="api-health">
+                <span class="info">Click "Test API Health" to check if Flask API is running...</span>
+            </div>
+        </div>
 
-app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+        <div class="test-section">
+            <div class="test-header">2. Snowflake Connection</div>
+            <div id="snowflake-test">
+                <span class="info">Click "Test Snowflake" to verify database connection...</span>
+            </div>
+        </div>
 
-# Configure logging - Reduce Snowflake connector verbosity
-logging.basicConfig(level=logging.WARNING)  # Only show warnings and errors
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Keep app logs at INFO level
+        <div class="test-section">
+            <div class="test-header">3. Data Retrieval</div>
+            <div id="data-test">
+                <span class="info">Click "Test Data Query" to fetch actual data...</span>
+            </div>
+        </div>
 
-# Suppress Snowflake connector INFO logs
-snowflake_logger = logging.getLogger('snowflake.connector')
-snowflake_logger.setLevel(logging.WARNING)
+        <div class="test-section">
+            <div class="test-header">4. Filter Options</div>
+            <div id="filter-test">
+                <span class="info">Click "Test Filters" to verify filter values...</span>
+            </div>
+        </div>
 
-# Suppress werkzeug INFO logs (Flask HTTP requests)
-werkzeug_logger = logging.getLogger('werkzeug')
-werkzeug_logger.setLevel(logging.ERROR)
+        <div class="test-section">
+            <div class="test-header">5. Query Log</div>
+            <div id="query-log">
+                <pre id="log-content">No queries executed yet...</pre>
+            </div>
+        </div>
+    </div>
 
-# Snowflake connection parameters
-SNOWFLAKE_CONFIG = {
-    'account': 'nsasprd.east-us-2.privatelink',
-    'user': 'm69382',
-    'private_key_file': 'private_key.txt',
-    'private_key_file_pwd': 'KsX.fVfg3_y0Ti5ewb0FNiPUc5kfDdJZws0tdgA.',
-    'warehouse': 'USR_REPORTING_WH',
-    'database': 'PRD_MOBILITY',
-    'schema': 'PRD_MOBILITYSCORECARD_VIEWS'
-}
+    <script>
+        const API_URL = 'http://localhost:5000/api';
+        let logContent = [];
 
-
-def get_snowflake_connection():
-    """Create and return a Snowflake connection"""
-    try:
-        conn = sc.connect(**SNOWFLAKE_CONFIG)
-        return conn
-    except Exception as e:
-        logger.error(f"Failed to connect to Snowflake: {str(e)}")
-        raise
-
-
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()})
-
-
-@app.route('/api/test', methods=['GET'])
-def test_connection():
-    """Test endpoint to verify Snowflake connection and data"""
-    try:
-        conn = get_snowflake_connection()
-        cur = conn.cursor()
-
-        # Test 1: Basic connection
-        cur.execute(
-            "SELECT CURRENT_USER(), CURRENT_DATABASE(), CURRENT_SCHEMA()")
-        context = cur.fetchone()
-
-        # Test 2: Check table exists
-        cur.execute("""
-            SELECT COUNT(*) 
-            FROM INFORMATION_SCHEMA.TABLES 
-            WHERE TABLE_SCHEMA = 'PRD_MOBILITYSCORECARD_VIEWS' 
-            AND TABLE_NAME = 'CQI2025_CQX_CONTRIBUTION'
-        """)
-        table_exists = cur.fetchone()[0] > 0
-
-        # Test 3: Count rows
-        row_count = 0
-        recent_count = 0
-        sample_data = []
-
-        if table_exists:
-            cur.execute("SELECT COUNT(*) FROM CQI2025_CQX_CONTRIBUTION")
-            row_count = cur.fetchone()[0]
-
-            # Get recent data count
-            cur.execute("""
-                SELECT COUNT(*) 
-                FROM CQI2025_CQX_CONTRIBUTION
-                WHERE PERIODSTART >= DATEADD(day, -7, CURRENT_TIMESTAMP())
-            """)
-            recent_count = cur.fetchone()[0]
-
-            # Get date range of data
-            cur.execute("""
-                SELECT 
-                    MIN(PERIODSTART) as earliest,
-                    MAX(PERIODSTART) as latest
-                FROM CQI2025_CQX_CONTRIBUTION
-            """)
-            date_range = cur.fetchone()
-
-            # Get sample data
-            cur.execute("""
-                SELECT USID, METRICNAME, EXTRAFAILURES, VENDOR, CQECLUSTER, SUBMKT, PERIODSTART
-                FROM CQI2025_CQX_CONTRIBUTION
-                WHERE PERIODSTART IS NOT NULL AND EXTRAFAILURES > 0
-                ORDER BY EXTRAFAILURES DESC
-                LIMIT 5
-            """)
-            sample_rows = cur.fetchall()
-            sample_data = [
-                {
-                    'USID': row[0],
-                    'METRICNAME': row[1],
-                    'EXTRAFAILURES': float(row[2]) if row[2] else 0,
-                    'VENDOR': row[3],
-                    'CLUSTER': row[4],
-                    'SUBMKT': row[5],
-                    'PERIODSTART': row[6].strftime('%Y-%m-%d %H:%M:%S') if row[6] else None
-                }
-                for row in sample_rows
-            ]
-
-        cur.close()
-        conn.close()
-
-        return jsonify({
-            'connection': 'success',
-            'user': context[0],
-            'database': context[1],
-            'schema': context[2],
-            'table_exists': table_exists,
-            'total_rows': row_count,
-            'recent_rows_7days': recent_count,
-            'date_range': {
-                'earliest': date_range[0].strftime('%Y-%m-%d %H:%M:%S') if date_range[0] else None,
-                'latest': date_range[1].strftime('%Y-%m-%d %H:%M:%S') if date_range[1] else None
-            } if table_exists else None,
-            'sample_data': sample_data
-        })
-
-    except Exception as e:
-        logger.error(f"Test connection failed: {str(e)}")
-        return jsonify({
-            'connection': 'failed',
-            'error': str(e),
-            'error_type': type(e).__name__
-        }), 500
-
-
-@app.route('/api/filters', methods=['GET'])
-@lru_cache(maxsize=1)
-def get_filter_options():
-    """Get available filter options from the database"""
-    try:
-        conn = get_snowflake_connection()
-        cur = conn.cursor()
-
-        filters = {}
-
-        # Get unique submarkets
-        cur.execute("""
-            SELECT DISTINCT SUBMKT 
-            FROM CQI2025_CQX_CONTRIBUTION 
-            WHERE SUBMKT IS NOT NULL 
-            ORDER BY SUBMKT
-        """)
-        filters['submarkets'] = [row[0] for row in cur.fetchall()]
-
-        # Get unique CQE clusters
-        cur.execute("""
-            SELECT DISTINCT CQECLUSTER 
-            FROM CQI2025_CQX_CONTRIBUTION 
-            WHERE CQECLUSTER IS NOT NULL 
-            ORDER BY CQECLUSTER
-        """)
-        filters['cqeClusters'] = [row[0] for row in cur.fetchall()]
-
-        # Get unique metric names
-        cur.execute("""
-            SELECT DISTINCT METRICNAME 
-            FROM CQI2025_CQX_CONTRIBUTION 
-            WHERE METRICNAME IS NOT NULL 
-            ORDER BY METRICNAME
-        """)
-        filters['metricNames'] = [row[0] for row in cur.fetchall()]
-
-        cur.close()
-        conn.close()
-
-        return jsonify(filters)
-
-    except Exception as e:
-        logger.error(f"Error fetching filter options: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/data', methods=['GET'])
-def get_cqi_data():
-    """Get CQI data based on filters"""
-    try:
-        # Log incoming request
-        logger.info(
-            f"Data request received with filters: {request.args.to_dict()}")
-
-        # Get filter parameters from query string
-        submarket = request.args.get('submarket', '')
-        cqe_cluster = request.args.get('cqeCluster', '')
-        period_start = request.args.get('periodStart', '')
-        period_end = request.args.get('periodEnd', '')
-        metric_name = request.args.get('metricName', '')
-        usid = request.args.get('usid', '')
-
-        # Build the query with filters
-        query = """
-            SELECT 
-                CQI_YEAR,
-                CONTRTYPE,
-                PERIODSTART,
-                PERIODEND,
-                FOCUSLEV,
-                FOCUSAREA,
-                DETAILLEV,
-                DETAILAREA,
-                METRICNAME,
-                METTYPE,
-                NUM,
-                DEN,
-                EXTRAFAILURES,
-                FOCUSAREA_L1CQIACTUAL,
-                RAWTARGET,
-                CQITARGET,
-                IDXCONTR,
-                METRICWT,
-                EXP_CONST,
-                TGTNUM,
-                TGTDEN,
-                USID,
-                CQECLUSTER,
-                VENDOR,
-                SUBMKT,
-                N2E_DATE
-            FROM CQI2025_CQX_CONTRIBUTION
-            WHERE 1=1
-        """
-
-        params = []
-
-        # Add filters dynamically
-        if submarket:
-            query += " AND SUBMKT = %s"
-            params.append(submarket)
-
-        if cqe_cluster:
-            query += " AND CQECLUSTER = %s"
-            params.append(cqe_cluster)
-
-        # Handle datetime comparisons for PERIODSTART and PERIODEND
-        # Since the columns are datetime, we need to compare with datetime values
-        if period_start:
-            # For start date, use beginning of day (00:00:00)
-            query += " AND PERIODSTART >= %s"
-            params.append(f"{period_start} 00:00:00")
-
-        if period_end:
-            # For end date, use end of day (23:59:59)
-            query += " AND PERIODEND <= %s"
-            params.append(f"{period_end} 23:59:59")
-
-        if metric_name:
-            query += " AND METRICNAME = %s"
-            params.append(metric_name)
-
-        if usid:
-            query += " AND USID = %s"
-            params.append(usid)
-
-        # Order by EXTRAFAILURES (worst offenders first - highest failures)
-        query += " ORDER BY EXTRAFAILURES DESC NULLS LAST LIMIT 1000"
-
-        # Execute query
-        conn = get_snowflake_connection()
-        cur = conn.cursor()
-
-        logger.info(f"Executing query with {len(params)} parameters")
-
-        if params:
-            cur.execute(query, params)
-        else:
-            cur.execute(query)
-
-        # Fetch results and convert to DataFrame
-        columns = [desc[0] for desc in cur.description]
-        data = cur.fetchall()
-
-        logger.info(f"Query returned {len(data)} rows")
-
-        # Check if we got any data
-        if len(data) == 0:
-            logger.warning("No data returned from Snowflake query")
-            # Try a simpler query to see if there's any data at all
-            test_query = "SELECT COUNT(*) FROM CQI2025_CQX_CONTRIBUTION"
-            cur.execute(test_query)
-            total_count = cur.fetchone()[0]
-            logger.info(f"Total rows in table: {total_count}")
-
-        df = pd.DataFrame(data, columns=columns)
-
-        cur.close()
-        conn.close()
-
-        # Convert DataFrame to JSON
-        result = df.to_dict('records')
-
-        # Convert date columns to ISO format strings
-        for record in result:
-            for key in ['PERIODSTART', 'PERIODEND', 'N2E_DATE']:
-                if key in record and record[key] is not None:
-                    if isinstance(record[key], (datetime, pd.Timestamp)):
-                        record[key] = record[key].isoformat()
-
-        return jsonify(result)
-
-    except Exception as e:
-        logger.error(f"Error fetching CQI data: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/summary', methods=['GET'])
-def get_summary_stats():
-    """Get summary statistics for the dashboard"""
-    try:
-        conn = get_snowflake_connection()
-        cur = conn.cursor()
-
-        # Get date range for last 7 days
-        end_date = datetime.now().strftime('%Y-%m-%d 23:59:59')
-        start_date = (datetime.now() - timedelta(days=7)
-                      ).strftime('%Y-%m-%d 00:00:00')
-
-        # Query for summary statistics
-        query = """
-            SELECT 
-                COUNT(DISTINCT USID) as total_usids,
-                COUNT(*) as total_records,
-                SUM(EXTRAFAILURES) as total_failures,
-                AVG(EXTRAFAILURES) as avg_failures,
-                MAX(EXTRAFAILURES) as max_failures,
-                COUNT(CASE WHEN EXTRAFAILURES > 100 THEN 1 END) as critical_offenders,
-                COUNT(CASE WHEN EXTRAFAILURES BETWEEN 50 AND 100 THEN 1 END) as medium_offenders,
-                COUNT(CASE WHEN EXTRAFAILURES BETWEEN 10 AND 49 THEN 1 END) as low_offenders
-            FROM CQI2025_CQX_CONTRIBUTION
-            WHERE PERIODSTART >= %s AND PERIODSTART <= %s
-        """
-
-        cur.execute(query, (start_date, end_date))
-        result = cur.fetchone()
-
-        summary = {
-            'totalUsids': result[0] or 0,
-            'totalRecords': result[1] or 0,
-            'totalFailures': float(result[2] or 0),
-            'avgFailures': float(result[3] or 0),
-            'maxFailures': float(result[4] or 0),
-            'criticalOffenders': result[5] or 0,
-            'mediumOffenders': result[6] or 0,
-            'lowOffenders': result[7] or 0,
-            'lastUpdated': datetime.now().isoformat()
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${message}`;
+            logContent.push(logEntry);
+            document.getElementById('log-content').textContent = logContent.join('\n');
         }
 
-        cur.close()
-        conn.close()
-
-        return jsonify(summary)
-
-    except Exception as e:
-        logger.error(f"Error fetching summary stats: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/trends', methods=['GET'])
-def get_trend_data():
-    """Get trend data for visualization"""
-    try:
-        # Get parameters
-        metric_name = request.args.get('metricName', '')
-        days = int(request.args.get('days', 30))
-
-        conn = get_snowflake_connection()
-        cur = conn.cursor()
-
-        # Query for trend data
-        query = """
-            SELECT 
-                DATE(PERIODSTART) as date,
-                AVG(FOCUSAREA_L1CQIACTUAL) as avg_actual,
-                AVG(CQITARGET) as avg_target,
-                COUNT(DISTINCT USID) as usid_count
-            FROM CQI2025_CQX_CONTRIBUTION
-            WHERE PERIODSTART >= DATEADD(day, -%s, CURRENT_DATE())
-        """
-
-        params = [days]
-
-        if metric_name:
-            query += " AND METRICNAME = %s"
-            params.append(metric_name)
-
-        query += " GROUP BY DATE(PERIODSTART) ORDER BY date"
-
-        cur.execute(query, params)
-
-        columns = [desc[0] for desc in cur.description]
-        data = cur.fetchall()
-        df = pd.DataFrame(data, columns=columns)
-
-        cur.close()
-        conn.close()
-
-        # Convert to JSON
-        result = df.to_dict('records')
-
-        # Convert date to ISO format
-        for record in result:
-            if 'DATE' in record and record['DATE'] is not None:
-                record['DATE'] = record['DATE'].isoformat()
-
-        return jsonify(result)
-
-    except Exception as e:
-        logger.error(f"Error fetching trend data: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/export', methods=['GET'])
-def export_data():
-    """Export data to CSV format"""
-    try:
-        # This would be similar to get_cqi_data but returns CSV
-        # Get the data first
-        data_response = get_cqi_data()
-        data = data_response.get_json()
-
-        if isinstance(data, list) and len(data) > 0:
-            df = pd.DataFrame(data)
-            csv_data = df.to_csv(index=False)
-
-            response = app.response_class(
-                response=csv_data,
-                status=200,
-                mimetype='text/csv',
-                headers={
-                    'Content-Disposition': f'attachment; filename=cqi_data_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        async function testAPIHealth() {
+            const div = document.getElementById('api-health');
+            div.innerHTML = '<span class="loading">Testing API...</span>';
+            addLog('Testing API health...');
+            
+            try {
+                const response = await fetch(`${API_URL}/health`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    div.innerHTML = `
+                        <span class="success">✅ API is running!</span><br>
+                        <span class="status-badge status-success">CONNECTED</span><br>
+                        Status: ${data.status}<br>
+                        Timestamp: ${data.timestamp}
+                    `;
+                    addLog('API health check: SUCCESS', 'success');
+                    return true;
+                } else {
+                    div.innerHTML = '<span class="error">❌ API returned error</span>';
+                    addLog('API health check: FAILED', 'error');
+                    return false;
                 }
-            )
-            return response
-        else:
-            return jsonify({'error': 'No data to export'}), 404
+            } catch (error) {
+                div.innerHTML = `
+                    <span class="error">❌ Cannot connect to API</span><br>
+                    <span class="status-badge status-error">OFFLINE</span><br>
+                    Error: ${error.message}<br>
+                    <br>
+                    <strong>Solution:</strong><br>
+                    1. Make sure Flask API is running: <code>python app.py</code><br>
+                    2. Check that port 5000 is not blocked
+                `;
+                addLog(`API connection failed: ${error.message}`, 'error');
+                return false;
+            }
+        }
 
-    except Exception as e:
-        logger.error(f"Error exporting data: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        async function testSnowflake() {
+            const div = document.getElementById('snowflake-test');
+            div.innerHTML = '<span class="loading">Testing Snowflake connection...</span>';
+            addLog('Testing Snowflake connection...');
+            
+            try {
+                const response = await fetch(`${API_URL}/test`);
+                const data = await response.json();
+                
+                if (response.ok && data.connection === 'success') {
+                    let html = `
+                        <span class="success">✅ Snowflake connected successfully!</span><br>
+                        <span class="status-badge status-success">CONNECTED</span><br><br>
+                        <strong>Connection Details:</strong><br>
+                        User: ${data.user}<br>
+                        Database: ${data.database}<br>
+                        Schema: ${data.schema}<br><br>
+                    `;
+                    
+                    if (data.table_exists) {
+                        html += `<span class="success">✅ Table CQI2025_CQX_CONTRIBUTION exists</span><br>`;
+                        html += `Total rows: <strong>${data.total_rows.toLocaleString()}</strong><br>`;
+                        html += `Recent rows (7 days): <strong>${data.recent_rows_7days.toLocaleString()}</strong><br>`;
+                        
+                        if (data.date_range) {
+                            html += `<br><strong>Date Range in Table:</strong><br>`;
+                            html += `Earliest: ${data.date_range.earliest || 'N/A'}<br>`;
+                            html += `Latest: ${data.date_range.latest || 'N/A'}<br>`;
+                        }
+                        
+                        if (data.sample_data && data.sample_data.length > 0) {
+                            html += `<br><strong>Sample Data (Top Offenders):</strong>`;
+                            html += `<table>
+                                <tr>
+                                    <th>USID</th>
+                                    <th>Metric</th>
+                                    <th>Extra Failures</th>
+                                    <th>Vendor</th>
+                                    <th>Cluster</th>
+                                    <th>Period Start</th>
+                                </tr>`;
+                            data.sample_data.forEach(row => {
+                                const failures = row.EXTRAFAILURES || 0;
+                                const failuresDisplay = failures >= 1000000 ? (failures/1000000).toFixed(1) + 'M' :
+                                                      failures >= 1000 ? (failures/1000).toFixed(1) + 'K' :
+                                                      failures.toString();
+                                html += `<tr>
+                                    <td>${row.USID || 'NULL'}</td>
+                                    <td>${row.METRICNAME || 'NULL'}</td>
+                                    <td><strong title="${failures.toLocaleString()}">${failuresDisplay}</strong></td>
+                                    <td>${row.VENDOR || 'NULL'}</td>
+                                    <td>${row.CLUSTER || 'NULL'}</td>
+                                    <td>${row.PERIODSTART || 'NULL'}</td>
+                                </tr>`;
+                            });
+                            html += `</table>`;
+                        }
+                    } else {
+                        html += `<span class="error">❌ Table CQI2025_CQX_CONTRIBUTION not found!</span>`;
+                    }
+                    
+                    div.innerHTML = html;
+                    addLog(`Snowflake test: SUCCESS (${data.total_rows} rows)`, 'success');
+                } else {
+                    div.innerHTML = `
+                        <span class="error">❌ Snowflake connection failed!</span><br>
+                        <span class="status-badge status-error">ERROR</span><br>
+                        Error: ${data.error || 'Unknown error'}<br>
+                        Type: ${data.error_type || 'Unknown'}<br><br>
+                        <strong>Check:</strong><br>
+                        1. private_key.txt exists in the app directory<br>
+                        2. Credentials are correct<br>
+                        3. Network access to Snowflake
+                    `;
+                    addLog(`Snowflake test failed: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                div.innerHTML = `<span class="error">❌ Test failed: ${error.message}</span>`;
+                addLog(`Snowflake test error: ${error.message}`, 'error');
+            }
+        }
 
+        async function testData() {
+            const div = document.getElementById('data-test');
+            div.innerHTML = '<span class="loading">Fetching data...</span>';
+            addLog('Testing data retrieval...');
+            
+            // Use a wider date range for testing
+            const endDate = new Date().toISOString().split('T')[0];
+            const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+            
+            try {
+                const params = new URLSearchParams({
+                    periodStart: startDate,
+                    periodEnd: endDate
+                });
+                
+                addLog(`Querying date range: ${startDate} to ${endDate}`);
+                
+                const response = await fetch(`${API_URL}/data?${params}`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    if (Array.isArray(data) && data.length > 0) {
+                        // Sort by EXTRAFAILURES to show top offenders
+                        const sortedData = data.sort((a, b) => (b.EXTRAFAILURES || 0) - (a.EXTRAFAILURES || 0));
+                        const topOffender = sortedData[0];
+                        const failures = topOffender.EXTRAFAILURES || 0;
+                        const failuresDisplay = failures >= 1000000 ? (failures/1000000).toFixed(1) + 'M' :
+                                              failures >= 1000 ? (failures/1000).toFixed(1) + 'K' :
+                                              failures.toString();
+                        
+                        div.innerHTML = `
+                            <span class="success">✅ Data retrieved successfully!</span><br>
+                            <span class="status-badge status-success">OK</span><br>
+                            Rows returned: <strong>${data.length}</strong><br>
+                            <br>
+                            <strong>Top Offender:</strong><br>
+                            USID: ${topOffender.USID || 'NULL'}<br>
+                            Metric: ${topOffender.METRIC_DISPLAY || topOffender.METRICNAME || 'NULL'}<br>
+                            Extra Failures: <strong style="color: red" title="${failures.toLocaleString()}">${failuresDisplay}</strong><br>
+                            Vendor: ${topOffender.VENDOR || 'NULL'}<br>
+                            Cluster: ${topOffender.CQECLUSTER || 'NULL'}
+                        `;
+                        addLog(`Data query: SUCCESS (${data.length} rows)`, 'success');
+                    } else if (Array.isArray(data) && data.length === 0) {
+                        div.innerHTML = `
+                            <span class="warning">⚠️ Query successful but no data returned</span><br>
+                            <span class="status-badge status-warning">NO DATA</span><br>
+                            <br>
+                            <strong>Possible reasons:</strong><br>
+                            1. No data for the specified date range (${startDate} to ${endDate})<br>
+                            2. Table might be empty<br>
+                            3. Data might be filtered out<br>
+                            <br>
+                            Try adjusting the date range in the main dashboard.
+                        `;
+                        addLog('Data query: NO RESULTS', 'warning');
+                    } else {
+                        div.innerHTML = `<span class="error">❌ Unexpected response format</span>`;
+                        addLog('Data query: Invalid response format', 'error');
+                    }
+                } else {
+                    div.innerHTML = `<span class="error">❌ Query failed: ${JSON.stringify(data)}</span>`;
+                    addLog(`Data query failed: ${data.error || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                div.innerHTML = `<span class="error">❌ Error: ${error.message}</span>`;
+                addLog(`Data query error: ${error.message}`, 'error');
+            }
+        }
 
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({'error': 'Endpoint not found'}), 404
+        async function testFilters() {
+            const div = document.getElementById('filter-test');
+            div.innerHTML = '<span class="loading">Loading filter options...</span>';
+            addLog('Testing filter options...');
+            
+            try {
+                const response = await fetch(`${API_URL}/filters`);
+                const data = await response.json();
+                
+                if (response.ok && !data.error) {
+                    let html = `<span class="success">✅ Filter options loaded!</span><br>`;
+                    html += '<span class="status-badge status-success">OK</span><br><br>';
+                    
+                    if (data.submarkets) {
+                        html += `<strong>Submarkets (${data.submarkets.length}):</strong><br>`;
+                        html += data.submarkets.slice(0, 5).join(', ');
+                        if (data.submarkets.length > 5) html += '...';
+                        html += '<br><br>';
+                    }
+                    
+                    if (data.cqeClusters) {
+                        html += `<strong>CQE Clusters (${data.cqeClusters.length}):</strong><br>`;
+                        html += data.cqeClusters.slice(0, 5).join(', ');
+                        if (data.cqeClusters.length > 5) html += '...';
+                        html += '<br><br>';
+                    }
+                    
+                    if (data.metricNames) {
+                        html += `<strong>Metrics (${data.metricNames.length}):</strong><br>`;
+                        html += data.metricNames.slice(0, 5).join(', ');
+                        if (data.metricNames.length > 5) html += '...';
+                    }
+                    
+                    div.innerHTML = html;
+                    addLog(`Filter test: SUCCESS (${data.submarkets?.length || 0} submarkets, ${data.cqeClusters?.length || 0} clusters, ${data.metricNames?.length || 0} metrics)`, 'success');
+                } else {
+                    div.innerHTML = `<span class="error">❌ Failed to load filters: ${data.error || 'Unknown error'}</span>`;
+                    addLog(`Filter test failed: ${data.error || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                div.innerHTML = `<span class="error">❌ Error: ${error.message}</span>`;
+                addLog(`Filter test error: ${error.message}`, 'error');
+            }
+        }
 
+        async function runAllTests() {
+            logContent = [];
+            addLog('Starting comprehensive test suite...');
+            
+            // Run tests in sequence
+            const apiOk = await testAPIHealth();
+            
+            if (apiOk) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+                await testSnowflake();
+                
+                await new Promise(resolve => setTimeout(resolve, 500));
+                await testData();
+                
+                await new Promise(resolve => setTimeout(resolve, 500));
+                await testFilters();
+            }
+            
+            addLog('All tests completed!');
+        }
 
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({'error': 'Internal server error'}), 500
-
-
-if __name__ == '__main__':
-    # Run the Flask app
-    # In production, use a proper WSGI server like gunicorn
-    print("🚀 Starting CQI Dashboard API Server...")
-    print("📊 API will be available at: http://localhost:5000")
-    print("✅ Snowflake connection configured")
-    print("🔇 Verbose logging suppressed - only warnings/errors will show")
-    print("-" * 50)
-
-    # Set debug=False for production to reduce logging
-    app.run(debug=False, host='0.0.0.0', port=5000)
-
-"""
-To run this API:
-
-1. Install required packages:
-   pip install flask flask-cors snowflake-connector-python pandas
-
-2. Ensure your private_key.txt file is in the same directory
-
-3. Run the Flask app:
-   python app.py
-
-4. The API will be available at http://localhost:5000
-
-For production deployment:
-- Use gunicorn or another WSGI server
-- Add proper authentication/authorization
-- Implement connection pooling for Snowflake
-- Add caching for frequently accessed data
-- Set up proper logging and monitoring
-"""
+        // Auto-run API health check on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(testAPIHealth, 500);
+        });
+    </script>
+</body>
+</html>
