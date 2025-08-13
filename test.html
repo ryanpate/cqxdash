@@ -274,10 +274,14 @@
                                     <th>Period Start</th>
                                 </tr>`;
                             data.sample_data.forEach(row => {
+                                const failures = row.EXTRAFAILURES || 0;
+                                const failuresDisplay = failures >= 1000000 ? (failures / 1000000).toFixed(1) + 'M' :
+                                    failures >= 1000 ? (failures / 1000).toFixed(1) + 'K' :
+                                        failures.toString();
                                 html += `<tr>
                                     <td>${row.USID || 'NULL'}</td>
                                     <td>${row.METRICNAME || 'NULL'}</td>
-                                    <td><strong>${row.EXTRAFAILURES || 0}</strong></td>
+                                    <td><strong title="${failures.toLocaleString()}">${failuresDisplay}</strong></td>
                                     <td>${row.VENDOR || 'NULL'}</td>
                                     <td>${row.CLUSTER || 'NULL'}</td>
                                     <td>${row.PERIODSTART || 'NULL'}</td>
@@ -335,6 +339,10 @@
                         // Sort by EXTRAFAILURES to show top offenders
                         const sortedData = data.sort((a, b) => (b.EXTRAFAILURES || 0) - (a.EXTRAFAILURES || 0));
                         const topOffender = sortedData[0];
+                        const failures = topOffender.EXTRAFAILURES || 0;
+                        const failuresDisplay = failures >= 1000000 ? (failures / 1000000).toFixed(1) + 'M' :
+                            failures >= 1000 ? (failures / 1000).toFixed(1) + 'K' :
+                                failures.toString();
 
                         div.innerHTML = `
                             <span class="success">✅ Data retrieved successfully!</span><br>
@@ -343,8 +351,8 @@
                             <br>
                             <strong>Top Offender:</strong><br>
                             USID: ${topOffender.USID || 'NULL'}<br>
-                            Metric: ${topOffender.METRICNAME || 'NULL'}<br>
-                            Extra Failures: <strong style="color: red">${topOffender.EXTRAFAILURES || 0}</strong><br>
+                            Metric: ${topOffender.METRIC_DISPLAY || topOffender.METRICNAME || 'NULL'}<br>
+                            Extra Failures: <strong style="color: red" title="${failures.toLocaleString()}">${failuresDisplay}</strong><br>
                             Vendor: ${topOffender.VENDOR || 'NULL'}<br>
                             Cluster: ${topOffender.CQECLUSTER || 'NULL'}
                         `;
