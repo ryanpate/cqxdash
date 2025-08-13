@@ -7,6 +7,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import snowflake.connector as sc
 import pandas as pd
+import numpy as np
 from datetime import datetime, timedelta
 import os
 from functools import lru_cache
@@ -107,23 +108,32 @@ def test_connection():
             cur.execute("""
                 SELECT USID, METRICNAME, EXTRAFAILURES, VENDOR, CQECLUSTER, SUBMKT, PERIODSTART
                 FROM CQI2025_CQX_CONTRIBUTION
-                WHERE PERIODSTART IS NOT NULL AND EXTRAFAILURES > 0
-                ORDER BY EXTRAFAILURES DESC
+                WHERE PERIODSTART IS NOT NULL
+                ORDER BY EXTRAFAILURES DESC NULLS LAST
                 LIMIT 5
             """)
             sample_rows = cur.fetchall()
-            sample_data = [
-                {
+            sample_data = []
+            for row in sample_rows:
+                # Handle potential None/NULL values
+                extrafailures = row[2]
+                if extrafailures is not None and pd.notna(extrafailures):
+                    try:
+                        extrafailures = int(float(extrafailures))
+                    except (ValueError, TypeError):
+                        extrafailures = 0
+                else:
+                    extrafailures = 0
+
+                sample_data.append({
                     'USID': row[0],
                     'METRICNAME': row[1],
-                    'EXTRAFAILURES': int(float(row[2])) if row[2] else 0,
+                    'EXTRAFAILURES': extrafailures,
                     'VENDOR': row[3],
                     'CLUSTER': row[4],
                     'SUBMKT': row[5],
                     'PERIODSTART': row[6].strftime('%Y-%m-%d %H:%M:%S') if row[6] else None
-                }
-                for row in sample_rows
-            ]
+                })
 
         cur.close()
         conn.close()
@@ -356,15 +366,40 @@ def get_cqi_data():
             else:
                 record['METRIC_DISPLAY'] = record.get('METRICNAME', '')
 
-            # Convert EXTRAFAILURES to integer
-            if 'EXTRAFAILURES' in record and record['EXTRAFAILURES'] is not None:
-                record['EXTRAFAILURES'] = int(float(record['EXTRAFAILURES']))
+            # Convert EXTRAFAILURES to integer, handling NaN and None values
+            if 'EXTRAFAILURES' in record:
+                if record['EXTRAFAILURES'] is not None and pd.notna(record['EXTRAFAILURES']):
+                    try:
+                        record['EXTRAFAILURES'] = int(
+                            float(record['EXTRAFAILURES']))
+                    except (ValueError, TypeError):
+                        record['EXTRAFAILURES'] = 0
+                else:
+                    record['EXTRAFAILURES'] = 0
+
+            # Handle other numeric fields that might have NaN
+            numeric_fields = ['NUM', 'DEN', 'FOCUSAREA_L1CQIACTUAL', 'RAWTARGET',
+                              'CQITARGET', 'IDXCONTR', 'METRICWT', 'EXP_CONST',
+                              'TGTNUM', 'TGTDEN', 'CQI_YEAR']
+
+            for field in numeric_fields:
+                if field in record:
+                    if pd.isna(record[field]):
+                        record[field] = None
+                    elif isinstance(record[field], (float, np.float64, np.float32)):
+                        # Convert numpy floats to Python floats to avoid JSON serialization issues
+                        record[field] = float(record[field])
+                    elif isinstance(record[field], (np.int64, np.int32)):
+                        # Convert numpy ints to Python ints
+                        record[field] = int(record[field])
 
             # Convert date columns to ISO format strings
             for key in ['PERIODSTART', 'PERIODEND', 'N2E_DATE']:
                 if key in record and record[key] is not None:
                     if isinstance(record[key], (datetime, pd.Timestamp)):
                         record[key] = record[key].isoformat()
+                    elif pd.isna(record[key]):
+                        record[key] = None
 
         return jsonify(result)
 
@@ -404,16 +439,25 @@ def get_summary_stats():
         cur.execute(query, (start_date, end_date))
         result = cur.fetchone()
 
+        # Helper function to safely convert to int
+        def safe_int(value):
+            if value is None or pd.isna(value):
+                return 0
+            try:
+                return int(float(value))
+            except (ValueError, TypeError):
+                return 0
+
         summary = {
-            'totalUsids': result[0] or 0,
-            'totalRecords': result[1] or 0,
-            'totalFailures': int(float(result[2] or 0)),
-            'avgFailures': int(float(result[3] or 0)),
-            'maxFailures': int(float(result[4] or 0)),
-            'criticalOffenders': result[5] or 0,
-            'highOffenders': result[6] or 0,
-            'mediumOffenders': result[7] or 0,
-            'lowOffenders': result[8] or 0,
+            'totalUsids': safe_int(result[0]),
+            'totalRecords': safe_int(result[1]),
+            'totalFailures': safe_int(result[2]),
+            'avgFailures': safe_int(result[3]),
+            'maxFailures': safe_int(result[4]),
+            'criticalOffenders': safe_int(result[5]),
+            'highOffenders': safe_int(result[6]),
+            'mediumOffenders': safe_int(result[7]),
+            'lowOffenders': safe_int(result[8]),
             'lastUpdated': datetime.now().isoformat()
         }
 
@@ -469,10 +513,22 @@ def get_trend_data():
         # Convert to JSON
         result = df.to_dict('records')
 
-        # Convert date to ISO format
+        # Handle NaN values and date formatting
         for record in result:
+            # Handle date
             if 'DATE' in record and record['DATE'] is not None:
-                record['DATE'] = record['DATE'].isoformat()
+                if hasattr(record['DATE'], 'isoformat'):
+                    record['DATE'] = record['DATE'].isoformat()
+
+            # Handle numeric fields
+            for field in ['AVG_ACTUAL', 'AVG_TARGET', 'USID_COUNT']:
+                if field in record:
+                    if pd.isna(record[field]):
+                        record[field] = None
+                    elif isinstance(record[field], (float, np.float64)):
+                        record[field] = float(record[field])
+                    elif isinstance(record[field], (np.int64, np.int32)):
+                        record[field] = int(record[field])
 
         return jsonify(result)
 
