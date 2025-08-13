@@ -1,5 +1,5 @@
 """
-CQI Dashboard Flask API
+CQI Dashboard Flask API - Fixed version with proper NaN handling
 Connects to Snowflake and serves data to the web dashboard
 """
 
@@ -12,14 +12,15 @@ from datetime import datetime, timedelta
 import os
 from functools import lru_cache
 import logging
+import json
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
 # Configure logging - Reduce Snowflake connector verbosity
-logging.basicConfig(level=logging.WARNING)  # Only show warnings and errors
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Keep app logs at INFO level
+logger.setLevel(logging.INFO)
 
 # Suppress Snowflake connector INFO logs
 snowflake_logger = logging.getLogger('snowflake.connector')
@@ -39,6 +40,35 @@ SNOWFLAKE_CONFIG = {
     'database': 'PRD_MOBILITY',
     'schema': 'PRD_MOBILITYSCORECARD_VIEWS'
 }
+
+
+def clean_numeric_value(value):
+    """Clean numeric values, handling NaN, Infinity, and None"""
+    if value is None:
+        return 0
+    if pd.isna(value):
+        return 0
+    if isinstance(value, (float, np.floating)):
+        if np.isinf(value):
+            return 0
+        if np.isnan(value):
+            return 0
+        # Convert to int if it's a whole number, otherwise keep as float
+        if value == int(value):
+            return int(value)
+        return float(value)
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    # Try to convert string to number
+    try:
+        num_val = float(value)
+        if np.isnan(num_val) or np.isinf(num_val):
+            return 0
+        if num_val == int(num_val):
+            return int(num_val)
+        return num_val
+    except (ValueError, TypeError):
+        return 0
 
 
 def get_snowflake_connection():
@@ -82,6 +112,7 @@ def test_connection():
         row_count = 0
         recent_count = 0
         sample_data = []
+        date_range = None
 
         if table_exists:
             cur.execute("SELECT COUNT(*) FROM CQI2025_CQX_CONTRIBUTION")
@@ -104,26 +135,25 @@ def test_connection():
             """)
             date_range = cur.fetchone()
 
-            # Get sample data
+            # Get sample data with specific metrics
             cur.execute("""
                 SELECT USID, METRICNAME, EXTRAFAILURES, VENDOR, CQECLUSTER, SUBMKT, PERIODSTART
                 FROM CQI2025_CQX_CONTRIBUTION
                 WHERE PERIODSTART IS NOT NULL
+                AND METRICNAME IN (
+                    'VOICE_CDR_RET_25', 'LTE_IQI_NS_ESO_25', 'LTE_IQI_RSRP_25',
+                    'LTE_IQI_QUALITY_25', 'VOLTE_RAN_ACBACC_25_ALL', 'VOLTE_CDR_MOMT_ACC_25',
+                    'ALLRAT_DACC_25', 'ALLRAT_DL_TPUT_25', 'ALLRAT_UL_TPUT_25',
+                    'ALLRAT_DDR_25', 'VOLTE_WIFI_CDR_25'
+                )
                 ORDER BY EXTRAFAILURES DESC NULLS LAST
                 LIMIT 5
             """)
             sample_rows = cur.fetchall()
-            sample_data = []
+
             for row in sample_rows:
-                # Handle potential None/NULL values
-                extrafailures = row[2]
-                if extrafailures is not None and pd.notna(extrafailures):
-                    try:
-                        extrafailures = int(float(extrafailures))
-                    except (ValueError, TypeError):
-                        extrafailures = 0
-                else:
-                    extrafailures = 0
+                # Clean EXTRAFAILURES value
+                extrafailures = clean_numeric_value(row[2])
 
                 sample_data.append({
                     'USID': row[0],
@@ -138,7 +168,7 @@ def test_connection():
         cur.close()
         conn.close()
 
-        return jsonify({
+        response_data = {
             'connection': 'success',
             'user': context[0],
             'database': context[1],
@@ -146,12 +176,16 @@ def test_connection():
             'table_exists': table_exists,
             'total_rows': row_count,
             'recent_rows_7days': recent_count,
-            'date_range': {
+            'sample_data': sample_data
+        }
+
+        if date_range:
+            response_data['date_range'] = {
                 'earliest': date_range[0].strftime('%Y-%m-%d %H:%M:%S') if date_range[0] else None,
                 'latest': date_range[1].strftime('%Y-%m-%d %H:%M:%S') if date_range[1] else None
-            } if table_exists else None,
-            'sample_data': sample_data
-        })
+            }
+
+        return jsonify(response_data)
 
     except Exception as e:
         logger.error(f"Test connection failed: {str(e)}")
@@ -298,15 +332,12 @@ def get_cqi_data():
             query += " AND CQECLUSTER = %s"
             params.append(cqe_cluster)
 
-        # Handle datetime comparisons for PERIODSTART and PERIODEND
-        # Since the columns are datetime, we need to compare with datetime values
+        # Handle datetime comparisons
         if period_start:
-            # For start date, use beginning of day (00:00:00)
             query += " AND PERIODSTART >= %s"
             params.append(f"{period_start} 00:00:00")
 
         if period_end:
-            # For end date, use end of day (23:59:59)
             query += " AND PERIODEND <= %s"
             params.append(f"{period_end} 23:59:59")
 
@@ -321,7 +352,7 @@ def get_cqi_data():
             query += " AND USID = %s"
             params.append(usid)
 
-        # Order by EXTRAFAILURES (worst offenders first - highest failures)
+        # Order by EXTRAFAILURES (worst offenders first)
         query += " ORDER BY EXTRAFAILURES DESC NULLS LAST LIMIT 1000"
 
         # Execute query
@@ -335,76 +366,58 @@ def get_cqi_data():
         else:
             cur.execute(query)
 
-        # Fetch results and convert to DataFrame
+        # Fetch results
         columns = [desc[0] for desc in cur.description]
         data = cur.fetchall()
 
         logger.info(f"Query returned {len(data)} rows")
 
-        # Check if we got any data
-        if len(data) == 0:
-            logger.warning("No data returned from Snowflake query")
-            # Try a simpler query to see if there's any data at all
-            test_query = "SELECT COUNT(*) FROM CQI2025_CQX_CONTRIBUTION"
-            cur.execute(test_query)
-            total_count = cur.fetchone()[0]
-            logger.info(f"Total rows in table: {total_count}")
-
-        df = pd.DataFrame(data, columns=columns)
-
         cur.close()
         conn.close()
 
-        # Convert DataFrame to JSON
-        result = df.to_dict('records')
+        # Process results
+        result = []
+        for row in data:
+            record = {}
+            for i, col in enumerate(columns):
+                value = row[i]
 
-        # Apply metric name mapping and ensure EXTRAFAILURES is integer
-        for record in result:
-            # Map metric names to display names
-            if 'METRICNAME' in record and record['METRICNAME'] in metric_mapping:
+                # Handle different data types
+                if col == 'EXTRAFAILURES':
+                    # Clean EXTRAFAILURES specifically
+                    record[col] = clean_numeric_value(value)
+                elif col in ['NUM', 'DEN', 'FOCUSAREA_L1CQIACTUAL', 'RAWTARGET',
+                             'CQITARGET', 'IDXCONTR', 'METRICWT', 'EXP_CONST',
+                             'TGTNUM', 'TGTDEN', 'CQI_YEAR']:
+                    # Clean other numeric fields
+                    record[col] = clean_numeric_value(value)
+                elif col in ['PERIODSTART', 'PERIODEND', 'N2E_DATE']:
+                    # Handle datetime fields
+                    if value is not None:
+                        if isinstance(value, (datetime, pd.Timestamp)):
+                            record[col] = value.isoformat()
+                        else:
+                            record[col] = None
+                    else:
+                        record[col] = None
+                else:
+                    # String fields
+                    record[col] = value
+
+            # Add metric display name
+            if record.get('METRICNAME') in metric_mapping:
                 record['METRIC_DISPLAY'] = metric_mapping[record['METRICNAME']]
             else:
                 record['METRIC_DISPLAY'] = record.get('METRICNAME', '')
 
-            # Convert EXTRAFAILURES to integer, handling NaN and None values
-            if 'EXTRAFAILURES' in record:
-                if record['EXTRAFAILURES'] is not None and pd.notna(record['EXTRAFAILURES']):
-                    try:
-                        record['EXTRAFAILURES'] = int(
-                            float(record['EXTRAFAILURES']))
-                    except (ValueError, TypeError):
-                        record['EXTRAFAILURES'] = 0
-                else:
-                    record['EXTRAFAILURES'] = 0
-
-            # Handle other numeric fields that might have NaN
-            numeric_fields = ['NUM', 'DEN', 'FOCUSAREA_L1CQIACTUAL', 'RAWTARGET',
-                              'CQITARGET', 'IDXCONTR', 'METRICWT', 'EXP_CONST',
-                              'TGTNUM', 'TGTDEN', 'CQI_YEAR']
-
-            for field in numeric_fields:
-                if field in record:
-                    if pd.isna(record[field]):
-                        record[field] = None
-                    elif isinstance(record[field], (float, np.float64, np.float32)):
-                        # Convert numpy floats to Python floats to avoid JSON serialization issues
-                        record[field] = float(record[field])
-                    elif isinstance(record[field], (np.int64, np.int32)):
-                        # Convert numpy ints to Python ints
-                        record[field] = int(record[field])
-
-            # Convert date columns to ISO format strings
-            for key in ['PERIODSTART', 'PERIODEND', 'N2E_DATE']:
-                if key in record and record[key] is not None:
-                    if isinstance(record[key], (datetime, pd.Timestamp)):
-                        record[key] = record[key].isoformat()
-                    elif pd.isna(record[key]):
-                        record[key] = None
+            result.append(record)
 
         return jsonify(result)
 
     except Exception as e:
         logger.error(f"Error fetching CQI data: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
@@ -420,8 +433,25 @@ def get_summary_stats():
         start_date = (datetime.now() - timedelta(days=7)
                       ).strftime('%Y-%m-%d 00:00:00')
 
+        # Define allowed metrics
+        metric_mapping = {
+            'VOICE_CDR_RET_25': 'V-CDR',
+            'LTE_IQI_NS_ESO_25': 'NS/ESO',
+            'LTE_IQI_RSRP_25': 'Quality RSRP',
+            'LTE_IQI_QUALITY_25': 'Quality RSRQ',
+            'VOLTE_RAN_ACBACC_25_ALL': 'V-ACC',
+            'VOLTE_CDR_MOMT_ACC_25': 'V-ACC-E2E',
+            'ALLRAT_DACC_25': 'D-ACC',
+            'ALLRAT_DL_TPUT_25': 'DLTPUT',
+            'ALLRAT_UL_TPUT_25': 'ULTPUT',
+            'ALLRAT_DDR_25': 'D-RET',
+            'VOLTE_WIFI_CDR_25': 'WIFI-RET'
+        }
+
+        allowed_metrics = list(metric_mapping.keys())
+
         # Query for summary statistics
-        query = """
+        query = f"""
             SELECT 
                 COUNT(DISTINCT USID) as total_usids,
                 COUNT(*) as total_records,
@@ -434,17 +464,19 @@ def get_summary_stats():
                 COUNT(CASE WHEN EXTRAFAILURES <= 100 THEN 1 END) as low_offenders
             FROM CQI2025_CQX_CONTRIBUTION
             WHERE PERIODSTART >= %s AND PERIODSTART <= %s
+            AND METRICNAME IN ({','.join(['%s'] * len(allowed_metrics))})
         """
 
-        cur.execute(query, (start_date, end_date))
+        params = [start_date, end_date] + allowed_metrics
+        cur.execute(query, params)
         result = cur.fetchone()
 
         summary = {
             'totalUsids': result[0] or 0,
             'totalRecords': result[1] or 0,
-            'totalFailures': int(float(result[2] or 0)),
-            'avgFailures': int(float(result[3] or 0)),
-            'maxFailures': int(float(result[4] or 0)),
+            'totalFailures': clean_numeric_value(result[2]),
+            'avgFailures': clean_numeric_value(result[3]),
+            'maxFailures': clean_numeric_value(result[4]),
             'criticalOffenders': result[5] or 0,
             'highOffenders': result[6] or 0,
             'mediumOffenders': result[7] or 0,
@@ -462,90 +494,6 @@ def get_summary_stats():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/trends', methods=['GET'])
-def get_trend_data():
-    """Get trend data for visualization"""
-    try:
-        # Get parameters
-        metric_name = request.args.get('metricName', '')
-        days = int(request.args.get('days', 30))
-
-        conn = get_snowflake_connection()
-        cur = conn.cursor()
-
-        # Query for trend data
-        query = """
-            SELECT 
-                DATE(PERIODSTART) as date,
-                AVG(FOCUSAREA_L1CQIACTUAL) as avg_actual,
-                AVG(CQITARGET) as avg_target,
-                COUNT(DISTINCT USID) as usid_count
-            FROM CQI2025_CQX_CONTRIBUTION
-            WHERE PERIODSTART >= DATEADD(day, -%s, CURRENT_DATE())
-        """
-
-        params = [days]
-
-        if metric_name:
-            query += " AND METRICNAME = %s"
-            params.append(metric_name)
-
-        query += " GROUP BY DATE(PERIODSTART) ORDER BY date"
-
-        cur.execute(query, params)
-
-        columns = [desc[0] for desc in cur.description]
-        data = cur.fetchall()
-        df = pd.DataFrame(data, columns=columns)
-
-        cur.close()
-        conn.close()
-
-        # Convert to JSON
-        result = df.to_dict('records')
-
-        # Convert date to ISO format
-        for record in result:
-            if 'DATE' in record and record['DATE'] is not None:
-                record['DATE'] = record['DATE'].isoformat()
-
-        return jsonify(result)
-
-    except Exception as e:
-        logger.error(f"Error fetching trend data: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/export', methods=['GET'])
-def export_data():
-    """Export data to CSV format"""
-    try:
-        # This would be similar to get_cqi_data but returns CSV
-        # Get the data first
-        data_response = get_cqi_data()
-        data = data_response.get_json()
-
-        if isinstance(data, list) and len(data) > 0:
-            df = pd.DataFrame(data)
-            csv_data = df.to_csv(index=False)
-
-            response = app.response_class(
-                response=csv_data,
-                status=200,
-                mimetype='text/csv',
-                headers={
-                    'Content-Disposition': f'attachment; filename=cqi_data_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
-                }
-            )
-            return response
-        else:
-            return jsonify({'error': 'No data to export'}), 404
-
-    except Exception as e:
-        logger.error(f"Error exporting data: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({'error': 'Endpoint not found'}), 404
@@ -558,7 +506,6 @@ def internal_error(error):
 
 if __name__ == '__main__':
     # Run the Flask app
-    # In production, use a proper WSGI server like gunicorn
     print("🚀 Starting CQI Dashboard API Server...")
     print("📊 API will be available at: http://localhost:5000")
     print("✅ Snowflake connection configured")
@@ -567,24 +514,3 @@ if __name__ == '__main__':
 
     # Set debug=False for production to reduce logging
     app.run(debug=False, host='0.0.0.0', port=5000)
-
-"""
-To run this API:
-
-1. Install required packages:
-   pip install flask flask-cors snowflake-connector-python pandas
-
-2. Ensure your private_key.txt file is in the same directory
-
-3. Run the Flask app:
-   python app.py
-
-4. The API will be available at http://localhost:5000
-
-For production deployment:
-- Use gunicorn or another WSGI server
-- Add proper authentication/authorization
-- Implement connection pooling for Snowflake
-- Add caching for frequently accessed data
-- Set up proper logging and monitoring
-"""

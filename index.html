@@ -450,7 +450,11 @@
 
         // Utility function to format large numbers compactly
         function formatCompactNumber(num) {
-            if (num === null || num === undefined) return '0';
+            if (num === null || num === undefined || num === '' || isNaN(num)) return '0';
+
+            // Convert to number and check validity
+            num = Number(num);
+            if (!isFinite(num)) return '0';
 
             num = Math.round(num); // Ensure integer
 
@@ -465,29 +469,12 @@
 
         // Utility function to get full number with commas for tooltips
         function formatFullNumber(num) {
-            if (num === null || num === undefined) return '0';
-            return Math.round(num).toLocaleString();
-        }
-        let metricMapping = {};
+            if (num === null || num === undefined || num === '' || isNaN(num)) return '0';
 
-        // Utility function to format large numbers compactly
-        function formatCompactNumber(num) {
-            if (num === null || num === undefined) return '0';
+            // Convert to number and check validity
+            num = Number(num);
+            if (!isFinite(num)) return '0';
 
-            num = Math.round(num); // Ensure integer
-
-            if (num >= 1000000) {
-                return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
-            } else if (num >= 1000) {
-                return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
-            } else {
-                return num.toString();
-            }
-        }
-
-        // Utility function to get full number with commas for tooltips
-        function formatFullNumber(num) {
-            if (num === null || num === undefined) return '0';
             return Math.round(num).toLocaleString();
         }
 
@@ -692,17 +679,27 @@
 
         function updateStats(data) {
             // Count total offenders (records with EXTRAFAILURES > 0)
-            const offenders = data.filter(row => (row.EXTRAFAILURES || 0) > 0);
+            const offenders = data.filter(row => {
+                const failures = Number(row.EXTRAFAILURES) || 0;
+                return isFinite(failures) && failures > 0;
+            });
             document.getElementById('totalOffenders').textContent = offenders.length;
 
             if (data.length > 0) {
-                // Calculate total failures
-                const totalFailures = data.reduce((sum, row) => sum + (row.EXTRAFAILURES || 0), 0);
+                // Calculate total failures with NaN checking
+                const totalFailures = data.reduce((sum, row) => {
+                    const failures = Number(row.EXTRAFAILURES) || 0;
+                    return sum + (isFinite(failures) ? failures : 0);
+                }, 0);
+
                 document.getElementById('totalFailures').textContent = formatCompactNumber(totalFailures);
                 document.getElementById('totalFailures').title = `Total: ${formatFullNumber(totalFailures)}`;
 
                 // Count critical offenders (EXTRAFAILURES > 10000)
-                const critical = data.filter(row => (row.EXTRAFAILURES || 0) > 10000).length;
+                const critical = data.filter(row => {
+                    const failures = Number(row.EXTRAFAILURES) || 0;
+                    return isFinite(failures) && failures > 10000;
+                }).length;
                 document.getElementById('criticalOffenders').textContent = critical;
 
                 // Count unique USIDs
@@ -722,19 +719,22 @@
             const tbody = document.getElementById('tableBody');
             tbody.innerHTML = '';
 
-            // Sort by EXTRAFAILURES (worst offenders first)
+            // Sort by EXTRAFAILURES (worst offenders first) with NaN handling
             const sortedData = data.sort((a, b) => {
-                const failuresA = a.EXTRAFAILURES || 0;
-                const failuresB = b.EXTRAFAILURES || 0;
-                return failuresB - failuresA;
+                const failuresA = Number(a.EXTRAFAILURES) || 0;
+                const failuresB = Number(b.EXTRAFAILURES) || 0;
+                // Check for NaN/Infinity
+                const validA = isFinite(failuresA) ? failuresA : 0;
+                const validB = isFinite(failuresB) ? failuresB : 0;
+                return validB - validA;
             }).slice(0, 100); // Show top 100 offenders
 
             sortedData.forEach((row, index) => {
                 const tr = document.createElement('tr');
-                const failures = Math.round(row.EXTRAFAILURES || 0);
+                const rawFailures = Number(row.EXTRAFAILURES) || 0;
+                const failures = isFinite(rawFailures) ? Math.round(rawFailures) : 0;
 
                 // Determine severity based on EXTRAFAILURES count
-                // Adjusted thresholds for potentially larger numbers
                 let severity, severityClass;
                 if (failures > 10000) {
                     severity = 'CRITICAL';
@@ -787,11 +787,12 @@
         function updateChart(data) {
             const ctx = document.getElementById('chartContainer').getContext('2d');
 
-            // Group data by metric and sum EXTRAFAILURES
+            // Group data by metric and sum EXTRAFAILURES with NaN handling
             const metricGroups = {};
             data.forEach(row => {
                 const metric = row.METRIC_DISPLAY || row.METRICNAME || 'Unknown';
-                const failures = Math.round(row.EXTRAFAILURES || 0);
+                const rawFailures = Number(row.EXTRAFAILURES) || 0;
+                const failures = isFinite(rawFailures) ? Math.round(rawFailures) : 0;
 
                 if (!metricGroups[metric]) {
                     metricGroups[metric] = {
@@ -895,21 +896,32 @@
                 return;
             }
 
-            // Sort data by EXTRAFAILURES for export
-            const sortedData = currentData.sort((a, b) => (b.EXTRAFAILURES || 0) - (a.EXTRAFAILURES || 0));
+            // Sort data by EXTRAFAILURES for export with NaN handling
+            const sortedData = currentData.sort((a, b) => {
+                const failuresA = Number(a.EXTRAFAILURES) || 0;
+                const failuresB = Number(b.EXTRAFAILURES) || 0;
+                const validA = isFinite(failuresA) ? failuresA : 0;
+                const validB = isFinite(failuresB) ? failuresB : 0;
+                return validB - validA;
+            });
 
             // Add rank to each row
-            const exportData = sortedData.map((row, index) => ({
-                Rank: index + 1,
-                USID: row.USID || '',
-                MetricName: row.METRIC_DISPLAY || row.METRICNAME || '',
-                ExtraFailures: Math.round(row.EXTRAFAILURES || 0),
-                Vendor: row.VENDOR || '',
-                Cluster: row.CQECLUSTER || '',
-                Submarket: row.SUBMKT || '',
-                PeriodStart: row.PERIODSTART || '',
-                PeriodEnd: row.PERIODEND || ''
-            }));
+            const exportData = sortedData.map((row, index) => {
+                const rawFailures = Number(row.EXTRAFAILURES) || 0;
+                const failures = isFinite(rawFailures) ? Math.round(rawFailures) : 0;
+
+                return {
+                    Rank: index + 1,
+                    USID: row.USID || '',
+                    MetricName: row.METRIC_DISPLAY || row.METRICNAME || '',
+                    ExtraFailures: failures,
+                    Vendor: row.VENDOR || '',
+                    Cluster: row.CQECLUSTER || '',
+                    Submarket: row.SUBMKT || '',
+                    PeriodStart: row.PERIODSTART || '',
+                    PeriodEnd: row.PERIODEND || ''
+                };
+            });
 
             // Convert to CSV
             const headers = Object.keys(exportData[0]);
