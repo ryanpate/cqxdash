@@ -335,7 +335,7 @@
     <div class="container">
         <div class="header">
             <h1>CQI Offenders Dashboard - Extra Failures Tracking</h1>
-            <p>Real-time monitoring of network failures and performance degradation by USID</p>
+            <p>Real-time monitoring of network failures aggregated by USID + Metric (averaged across date range)</p>
         </div>
 
         <div class="filters-section">
@@ -381,7 +381,7 @@
 
         <div class="stats-grid">
             <div class="stat-card">
-                <h3>Total Offenders</h3>
+                <h3>Unique Offenders</h3>
                 <div class="value" id="totalOffenders">0</div>
                 <div class="change negative" id="offenderChange">Loading...</div>
             </div>
@@ -393,7 +393,7 @@
             <div class="stat-card">
                 <h3>Critical Offenders</h3>
                 <div class="value" id="criticalOffenders">0</div>
-                <div class="change negative" id="criticalChange">Failures > 100</div>
+                <div class="change negative" id="criticalChange">Avg Failures > 10K</div>
             </div>
             <div class="stat-card">
                 <h3>Active USIDs</h3>
@@ -423,7 +423,9 @@
                                 <th>Rank</th>
                                 <th>USID</th>
                                 <th>Metric Name</th>
-                                <th>Extra Failures</th>
+                                <th>Avg Failures</th>
+                                <th>Total Failures</th>
+                                <th>Days</th>
                                 <th>Vendor</th>
                                 <th>CQE Cluster</th>
                                 <th>Severity</th>
@@ -613,39 +615,60 @@
         }
 
         function generateSampleData() {
-            // Generate sample data for demonstration
+            // Generate sample aggregated data for demonstration
             const sampleData = [];
             const metrics = ['V-CDR', 'NS/ESO', 'Quality RSRP', 'Quality RSRQ', 'V-ACC', 'V-ACC-E2E', 'D-ACC', 'DLTPUT', 'ULTPUT', 'D-RET', 'WIFI-RET'];
             const vendors = ['Nokia', 'Ericsson', 'Huawei', 'Samsung'];
             const clusters = ['CQE_EAST', 'CQE_WEST', 'CQE_CENTRAL', 'CQE_SOUTH'];
             const submarkets = ['NYC', 'LA', 'Chicago', 'Houston', 'Phoenix'];
 
-            for (let i = 0; i < 50; i++) {
-                // Generate random EXTRAFAILURES with realistic distribution
-                let failures;
+            // Generate unique USID + Metric combinations
+            const usedCombinations = new Set();
+
+            for (let i = 0; i < 100; i++) {
+                const usid = `US${10000 + Math.floor(i / 2)}`; // Each USID appears with ~2 metrics
+                const metricIdx = Math.floor(Math.random() * metrics.length);
+                const metric = metrics[metricIdx];
+                const combination = `${usid}-${metric}`;
+
+                // Skip if this combination already exists
+                if (usedCombinations.has(combination)) continue;
+                usedCombinations.add(combination);
+
+                // Generate random failures with realistic distribution
+                let avgFailures;
                 const rand = Math.random();
                 if (rand > 0.95) {
-                    // 5% critical offenders - very high numbers
-                    failures = Math.floor(Math.random() * 50000) + 10000;
+                    // 5% critical offenders - very high average
+                    avgFailures = Math.floor(Math.random() * 30000) + 10000;
                 } else if (rand > 0.8) {
                     // 15% high offenders
-                    failures = Math.floor(Math.random() * 5000) + 1000;
+                    avgFailures = Math.floor(Math.random() * 5000) + 1000;
                 } else if (rand > 0.5) {
                     // 30% medium offenders
-                    failures = Math.floor(Math.random() * 500) + 100;
+                    avgFailures = Math.floor(Math.random() * 500) + 100;
                 } else {
                     // 50% low or no failures
-                    failures = Math.floor(Math.random() * 100);
+                    avgFailures = Math.floor(Math.random() * 100);
                 }
 
+                // Random number of records (1-30 days)
+                const recordCount = Math.floor(Math.random() * 29) + 1;
+                const totalFailures = avgFailures * recordCount;
+
                 sampleData.push({
-                    USID: `US${10000 + i}`,
-                    METRICNAME: metrics[Math.floor(Math.random() * metrics.length)],
-                    METRIC_DISPLAY: metrics[Math.floor(Math.random() * metrics.length)],
-                    EXTRAFAILURES: failures,
+                    USID: usid,
+                    METRICNAME: metric,
+                    METRIC_DISPLAY: metric,
+                    AVG_EXTRAFAILURES: avgFailures,
+                    TOTAL_EXTRAFAILURES: totalFailures,
+                    RECORD_COUNT: recordCount,
+                    EXTRAFAILURES: avgFailures, // For compatibility
                     VENDOR: vendors[Math.floor(Math.random() * vendors.length)],
                     CQECLUSTER: clusters[Math.floor(Math.random() * clusters.length)],
-                    SUBMKT: submarkets[Math.floor(Math.random() * submarkets.length)]
+                    SUBMKT: submarkets[Math.floor(Math.random() * submarkets.length)],
+                    EARLIEST_PERIOD: new Date(Date.now() - recordCount * 24 * 60 * 60 * 1000).toISOString(),
+                    LATEST_PERIOD: new Date().toISOString()
                 });
             }
 
@@ -678,39 +701,42 @@
         }
 
         function updateStats(data) {
-            // Count total offenders (records with EXTRAFAILURES > 0)
+            // Count total unique USID+Metric combinations with failures > 0
             const offenders = data.filter(row => {
-                const failures = Number(row.EXTRAFAILURES) || 0;
-                return isFinite(failures) && failures > 0;
+                const avgFailures = Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0;
+                return isFinite(avgFailures) && avgFailures > 0;
             });
             document.getElementById('totalOffenders').textContent = offenders.length;
 
             if (data.length > 0) {
-                // Calculate total failures with NaN checking
+                // Calculate total failures across all records
                 const totalFailures = data.reduce((sum, row) => {
-                    const failures = Number(row.EXTRAFAILURES) || 0;
-                    return sum + (isFinite(failures) ? failures : 0);
+                    // Use TOTAL_EXTRAFAILURES if available, otherwise calculate from average
+                    const total = row.TOTAL_EXTRAFAILURES ?
+                        Number(row.TOTAL_EXTRAFAILURES) :
+                        (Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0) * (row.RECORD_COUNT || 1);
+                    return sum + (isFinite(total) ? total : 0);
                 }, 0);
 
                 document.getElementById('totalFailures').textContent = formatCompactNumber(totalFailures);
                 document.getElementById('totalFailures').title = `Total: ${formatFullNumber(totalFailures)}`;
 
-                // Count critical offenders (EXTRAFAILURES > 10000)
+                // Count critical offenders based on average failures > 10000
                 const critical = data.filter(row => {
-                    const failures = Number(row.EXTRAFAILURES) || 0;
-                    return isFinite(failures) && failures > 10000;
+                    const avgFailures = Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0;
+                    return isFinite(avgFailures) && avgFailures > 10000;
                 }).length;
                 document.getElementById('criticalOffenders').textContent = critical;
 
-                // Count unique USIDs
+                // Count unique USIDs (now each USID appears only once per metric)
                 const uniqueUsids = new Set(data.map(row => row.USID)).size;
                 document.getElementById('activeUsids').textContent = uniqueUsids;
 
                 // Update change indicators
-                document.getElementById('offenderChange').textContent = `${offenders.length} with failures`;
-                const avgFailures = totalFailures / data.length;
-                document.getElementById('failureChange').textContent = `Avg: ${formatCompactNumber(avgFailures)} per record`;
-                document.getElementById('criticalChange').textContent = `${critical} sites > 10K failures`;
+                document.getElementById('offenderChange').textContent = `${offenders.length} USID+Metric pairs`;
+                const avgFailuresPerPair = totalFailures / data.length;
+                document.getElementById('failureChange').textContent = `Avg: ${formatCompactNumber(avgFailuresPerPair)} per pair`;
+                document.getElementById('criticalChange').textContent = `${critical} pairs > 10K avg`;
                 document.getElementById('usidChange').textContent = `${uniqueUsids} unique sites`;
             }
         }
@@ -719,30 +745,36 @@
             const tbody = document.getElementById('tableBody');
             tbody.innerHTML = '';
 
-            // Sort by EXTRAFAILURES (worst offenders first) with NaN handling
+            // Sort by AVG_EXTRAFAILURES (worst average offenders first) with NaN handling
             const sortedData = data.sort((a, b) => {
-                const failuresA = Number(a.EXTRAFAILURES) || 0;
-                const failuresB = Number(b.EXTRAFAILURES) || 0;
+                const avgFailuresA = Number(a.AVG_EXTRAFAILURES || a.EXTRAFAILURES) || 0;
+                const avgFailuresB = Number(b.AVG_EXTRAFAILURES || b.EXTRAFAILURES) || 0;
                 // Check for NaN/Infinity
-                const validA = isFinite(failuresA) ? failuresA : 0;
-                const validB = isFinite(failuresB) ? failuresB : 0;
+                const validA = isFinite(avgFailuresA) ? avgFailuresA : 0;
+                const validB = isFinite(avgFailuresB) ? avgFailuresB : 0;
                 return validB - validA;
             }).slice(0, 100); // Show top 100 offenders
 
             sortedData.forEach((row, index) => {
                 const tr = document.createElement('tr');
-                const rawFailures = Number(row.EXTRAFAILURES) || 0;
-                const failures = isFinite(rawFailures) ? Math.round(rawFailures) : 0;
 
-                // Determine severity based on EXTRAFAILURES count
+                // Get average and total failures
+                const avgFailures = Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0;
+                const totalFailures = Number(row.TOTAL_EXTRAFAILURES) || (avgFailures * (row.RECORD_COUNT || 1));
+                const recordCount = row.RECORD_COUNT || 1;
+
+                const validAvg = isFinite(avgFailures) ? Math.round(avgFailures) : 0;
+                const validTotal = isFinite(totalFailures) ? Math.round(totalFailures) : 0;
+
+                // Determine severity based on average failures
                 let severity, severityClass;
-                if (failures > 10000) {
+                if (validAvg > 10000) {
                     severity = 'CRITICAL';
                     severityClass = 'severity-high';
-                } else if (failures > 1000) {
+                } else if (validAvg > 1000) {
                     severity = 'HIGH';
                     severityClass = 'severity-high';
-                } else if (failures > 100) {
+                } else if (validAvg > 100) {
                     severity = 'MEDIUM';
                     severityClass = 'severity-medium';
                 } else {
@@ -753,14 +785,18 @@
                 // Use display name if available, otherwise use original metric name
                 const metricDisplay = row.METRIC_DISPLAY || row.METRICNAME || '-';
 
-                // Create cell with compact number and tooltip showing full number
-                const failuresCell = `<strong title="${formatFullNumber(failures)} failures">${formatCompactNumber(failures)}</strong>`;
+                // Create cells with compact numbers and tooltips
+                const avgFailuresCell = `<strong title="Average: ${formatFullNumber(validAvg)} failures">${formatCompactNumber(validAvg)}</strong>`;
+                const totalFailuresCell = `<strong title="Total: ${formatFullNumber(validTotal)} failures">${formatCompactNumber(validTotal)}</strong>`;
+                const daysCell = `<span title="${recordCount} record(s) averaged">${recordCount}</span>`;
 
                 tr.innerHTML = `
                     <td><strong>#${index + 1}</strong></td>
                     <td>${row.USID || '-'}</td>
                     <td>${metricDisplay}</td>
-                    <td>${failuresCell}</td>
+                    <td>${avgFailuresCell}</td>
+                    <td>${totalFailuresCell}</td>
+                    <td>${daysCell}</td>
                     <td>${row.VENDOR || '-'}</td>
                     <td>${row.CQECLUSTER || '-'}</td>
                     <td><span class="${severityClass}">${severity}</span></td>
@@ -787,23 +823,39 @@
         function updateChart(data) {
             const ctx = document.getElementById('chartContainer').getContext('2d');
 
-            // Group data by metric and sum EXTRAFAILURES with NaN handling
+            // Group data by metric and sum failures with NaN handling
             const metricGroups = {};
             data.forEach(row => {
                 const metric = row.METRIC_DISPLAY || row.METRICNAME || 'Unknown';
-                const rawFailures = Number(row.EXTRAFAILURES) || 0;
-                const failures = isFinite(rawFailures) ? Math.round(rawFailures) : 0;
+                const avgFailures = Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0;
+                const totalFailures = row.TOTAL_EXTRAFAILURES ?
+                    Number(row.TOTAL_EXTRAFAILURES) :
+                    avgFailures * (row.RECORD_COUNT || 1);
+
+                const validAvg = isFinite(avgFailures) ? Math.round(avgFailures) : 0;
+                const validTotal = isFinite(totalFailures) ? Math.round(totalFailures) : 0;
 
                 if (!metricGroups[metric]) {
                     metricGroups[metric] = {
                         totalFailures: 0,
+                        avgFailures: 0,
                         count: 0,
-                        maxFailures: 0
+                        maxAvgFailures: 0,
+                        totalRecords: 0
                     };
                 }
-                metricGroups[metric].totalFailures += failures;
+                metricGroups[metric].totalFailures += validTotal;
+                metricGroups[metric].avgFailures += validAvg;
                 metricGroups[metric].count += 1;
-                metricGroups[metric].maxFailures = Math.max(metricGroups[metric].maxFailures, failures);
+                metricGroups[metric].maxAvgFailures = Math.max(metricGroups[metric].maxAvgFailures, validAvg);
+                metricGroups[metric].totalRecords += (row.RECORD_COUNT || 1);
+            });
+
+            // Calculate overall averages for each metric
+            Object.keys(metricGroups).forEach(metric => {
+                if (metricGroups[metric].count > 0) {
+                    metricGroups[metric].avgFailures = metricGroups[metric].avgFailures / metricGroups[metric].count;
+                }
             });
 
             // Sort metrics by total failures and get top 10
@@ -816,15 +868,22 @@
                 labels: sortedMetrics.map(([metric, _]) => metric),
                 datasets: [
                     {
-                        label: 'Total Extra Failures',
+                        label: 'Total Failures (All USIDs)',
                         data: sortedMetrics.map(([_, data]) => data.totalFailures),
                         backgroundColor: 'rgba(239, 68, 68, 0.8)',
                         borderColor: 'rgba(239, 68, 68, 1)',
                         borderWidth: 2
                     },
                     {
-                        label: 'Max Failures (Single USID)',
-                        data: sortedMetrics.map(([_, data]) => data.maxFailures),
+                        label: 'Average Failures per USID',
+                        data: sortedMetrics.map(([_, data]) => Math.round(data.avgFailures)),
+                        backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                        borderColor: 'rgba(59, 130, 246, 1)',
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'Max Average (Single USID)',
+                        data: sortedMetrics.map(([_, data]) => data.maxAvgFailures),
                         backgroundColor: 'rgba(251, 146, 60, 0.8)',
                         borderColor: 'rgba(251, 146, 60, 1)',
                         borderWidth: 2
@@ -848,7 +907,7 @@
                         },
                         title: {
                             display: true,
-                            text: 'Top Offending Metrics by Extra Failures'
+                            text: 'Top Offending Metrics by Failures (Aggregated by USID)'
                         },
                         tooltip: {
                             callbacks: {
@@ -858,7 +917,10 @@
                                 },
                                 afterLabel: function (context) {
                                     const metric = sortedMetrics[context.dataIndex];
-                                    return `Records: ${metric[1].count}`;
+                                    return [
+                                        `USIDs: ${metric[1].count}`,
+                                        `Total Records: ${metric[1].totalRecords}`
+                                    ];
                                 }
                             }
                         }
@@ -868,7 +930,7 @@
                             beginAtZero: true,
                             title: {
                                 display: true,
-                                text: 'Extra Failures Count'
+                                text: 'Failures Count'
                             },
                             ticks: {
                                 callback: function (value) {
@@ -896,30 +958,34 @@
                 return;
             }
 
-            // Sort data by EXTRAFAILURES for export with NaN handling
+            // Sort data by average failures for export with NaN handling
             const sortedData = currentData.sort((a, b) => {
-                const failuresA = Number(a.EXTRAFAILURES) || 0;
-                const failuresB = Number(b.EXTRAFAILURES) || 0;
-                const validA = isFinite(failuresA) ? failuresA : 0;
-                const validB = isFinite(failuresB) ? failuresB : 0;
+                const avgFailuresA = Number(a.AVG_EXTRAFAILURES || a.EXTRAFAILURES) || 0;
+                const avgFailuresB = Number(b.AVG_EXTRAFAILURES || b.EXTRAFAILURES) || 0;
+                const validA = isFinite(avgFailuresA) ? avgFailuresA : 0;
+                const validB = isFinite(avgFailuresB) ? avgFailuresB : 0;
                 return validB - validA;
             });
 
             // Add rank to each row
             const exportData = sortedData.map((row, index) => {
-                const rawFailures = Number(row.EXTRAFAILURES) || 0;
-                const failures = isFinite(rawFailures) ? Math.round(rawFailures) : 0;
+                const avgFailures = Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0;
+                const totalFailures = Number(row.TOTAL_EXTRAFAILURES) || (avgFailures * (row.RECORD_COUNT || 1));
+                const validAvg = isFinite(avgFailures) ? Math.round(avgFailures) : 0;
+                const validTotal = isFinite(totalFailures) ? Math.round(totalFailures) : 0;
 
                 return {
                     Rank: index + 1,
                     USID: row.USID || '',
                     MetricName: row.METRIC_DISPLAY || row.METRICNAME || '',
-                    ExtraFailures: failures,
+                    AverageFailures: validAvg,
+                    TotalFailures: validTotal,
+                    RecordCount: row.RECORD_COUNT || 1,
                     Vendor: row.VENDOR || '',
                     Cluster: row.CQECLUSTER || '',
                     Submarket: row.SUBMKT || '',
-                    PeriodStart: row.PERIODSTART || '',
-                    PeriodEnd: row.PERIODEND || ''
+                    EarliestPeriod: row.EARLIEST_PERIOD || '',
+                    LatestPeriod: row.LATEST_PERIOD || ''
                 };
             });
 
@@ -941,7 +1007,7 @@
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `cqi_offenders_failures_${new Date().toISOString().split('T')[0]}.csv`;
+            a.download = `cqi_offenders_aggregated_${new Date().toISOString().split('T')[0]}.csv`;
             a.click();
             window.URL.revokeObjectURL(url);
         }

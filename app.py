@@ -256,7 +256,7 @@ def get_filter_options():
 
 @app.route('/api/data', methods=['GET'])
 def get_cqi_data():
-    """Get CQI data based on filters"""
+    """Get CQI data based on filters - aggregated by USID + METRICNAME"""
     try:
         # Log incoming request
         logger.info(
@@ -285,35 +285,21 @@ def get_cqi_data():
             'VOLTE_WIFI_CDR_25': 'WIFI-RET'
         }
 
-        # Build the query with filters
+        # Build aggregated query - Group by USID + METRICNAME
         query = """
             SELECT 
-                CQI_YEAR,
-                CONTRTYPE,
-                PERIODSTART,
-                PERIODEND,
-                FOCUSLEV,
-                FOCUSAREA,
-                DETAILLEV,
-                DETAILAREA,
-                METRICNAME,
-                METTYPE,
-                NUM,
-                DEN,
-                EXTRAFAILURES,
-                FOCUSAREA_L1CQIACTUAL,
-                RAWTARGET,
-                CQITARGET,
-                IDXCONTR,
-                METRICWT,
-                EXP_CONST,
-                TGTNUM,
-                TGTDEN,
                 USID,
-                CQECLUSTER,
-                VENDOR,
-                SUBMKT,
-                N2E_DATE
+                METRICNAME,
+                AVG(EXTRAFAILURES) as AVG_EXTRAFAILURES,
+                SUM(EXTRAFAILURES) as TOTAL_EXTRAFAILURES,
+                COUNT(*) as RECORD_COUNT,
+                MAX(VENDOR) as VENDOR,
+                MAX(CQECLUSTER) as CQECLUSTER,
+                MAX(SUBMKT) as SUBMKT,
+                AVG(FOCUSAREA_L1CQIACTUAL) as AVG_ACTUAL,
+                AVG(CQITARGET) as AVG_TARGET,
+                MIN(PERIODSTART) as EARLIEST_PERIOD,
+                MAX(PERIODEND) as LATEST_PERIOD
             FROM CQI2025_CQX_CONTRIBUTION
             WHERE 1=1
         """
@@ -352,14 +338,19 @@ def get_cqi_data():
             query += " AND USID = %s"
             params.append(usid)
 
-        # Order by EXTRAFAILURES (worst offenders first)
-        query += " ORDER BY EXTRAFAILURES DESC NULLS LAST LIMIT 1000"
+        # Group by USID and METRICNAME, order by average failures
+        query += """ 
+            GROUP BY USID, METRICNAME
+            ORDER BY AVG_EXTRAFAILURES DESC NULLS LAST
+            LIMIT 1000
+        """
 
         # Execute query
         conn = get_snowflake_connection()
         cur = conn.cursor()
 
-        logger.info(f"Executing query with {len(params)} parameters")
+        logger.info(
+            f"Executing aggregated query with {len(params)} parameters")
 
         if params:
             cur.execute(query, params)
@@ -370,7 +361,7 @@ def get_cqi_data():
         columns = [desc[0] for desc in cur.description]
         data = cur.fetchall()
 
-        logger.info(f"Query returned {len(data)} rows")
+        logger.info(f"Query returned {len(data)} aggregated rows")
 
         cur.close()
         conn.close()
@@ -383,15 +374,16 @@ def get_cqi_data():
                 value = row[i]
 
                 # Handle different data types
-                if col == 'EXTRAFAILURES':
-                    # Clean EXTRAFAILURES specifically
+                if col in ['AVG_EXTRAFAILURES', 'TOTAL_EXTRAFAILURES']:
+                    # Clean failure values
                     record[col] = clean_numeric_value(value)
-                elif col in ['NUM', 'DEN', 'FOCUSAREA_L1CQIACTUAL', 'RAWTARGET',
-                             'CQITARGET', 'IDXCONTR', 'METRICWT', 'EXP_CONST',
-                             'TGTNUM', 'TGTDEN', 'CQI_YEAR']:
-                    # Clean other numeric fields
+                elif col in ['AVG_ACTUAL', 'AVG_TARGET']:
+                    # Clean numeric averages
                     record[col] = clean_numeric_value(value)
-                elif col in ['PERIODSTART', 'PERIODEND', 'N2E_DATE']:
+                elif col == 'RECORD_COUNT':
+                    # Keep count as integer
+                    record[col] = int(value) if value else 0
+                elif col in ['EARLIEST_PERIOD', 'LATEST_PERIOD']:
                     # Handle datetime fields
                     if value is not None:
                         if isinstance(value, (datetime, pd.Timestamp)):
@@ -409,6 +401,9 @@ def get_cqi_data():
                 record['METRIC_DISPLAY'] = metric_mapping[record['METRICNAME']]
             else:
                 record['METRIC_DISPLAY'] = record.get('METRICNAME', '')
+
+            # For compatibility, also include EXTRAFAILURES as the average
+            record['EXTRAFAILURES'] = record.get('AVG_EXTRAFAILURES', 0)
 
             result.append(record)
 
