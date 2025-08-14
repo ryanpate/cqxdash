@@ -311,8 +311,8 @@
     <div class="container">
         <div class="header">
             <h1>CQI Offenders Dashboard - Extra Failures Tracking</h1>
-            <p>Network failures aggregated by USID + Metric with dynamic severity based on contribution to total
-                failures</p>
+            <p>Network failures aggregated by USID (shows "All" metrics when no filter, or specific metric when
+                filtered)</p>
         </div>
 
         <div class="filters-section">
@@ -358,7 +358,7 @@
 
         <div class="stats-grid">
             <div class="stat-card">
-                <h3>Unique Offenders</h3>
+                <h3>Total Entries</h3>
                 <div class="value" id="totalOffenders">0</div>
                 <div class="change negative" id="offenderChange">Loading...</div>
             </div>
@@ -373,7 +373,7 @@
                 <div class="change negative" id="criticalChange">≥10% of total</div>
             </div>
             <div class="stat-card">
-                <h3>Active USIDs</h3>
+                <h3>Unique USIDs</h3>
                 <div class="value" id="activeUsids">0</div>
                 <div class="change positive" id="usidChange">Loading...</div>
             </div>
@@ -387,222 +387,269 @@
             <div class="info-note">
                 <strong>Dynamic Severity:</strong> Severity levels are calculated based on each entry's percentage
                 contribution to the total failures in the current filtered dataset.
-                CRITICAL ≥10% | HIGH 5-10% | MEDIUM 1-5% | LOW <1% </div>
+                CRITICAL ≥10% | HIGH 5-10% | MEDIUM 1-5% | LOW <1%<br>
+                    <strong>Metric Aggregation:</strong> When no metric filter is selected, all metrics are aggregated
+                    per USID and shown as "All" in the table.
+            </div>
 
-                    <div id="tableContainer" style="display: block;">
-                        <div class="loading">
-                            <div class="loading-spinner"></div>
-                            <p style="margin-top: 10px;">Loading data...</p>
-                        </div>
-                        <div class="table-container" style="display: none;">
-                            <table id="dataTable">
-                                <thead>
-                                    <tr>
-                                        <th>Rank</th>
-                                        <th>USID</th>
-                                        <th>Metric Name</th>
-                                        <th>Avg Failures</th>
-                                        <th>Total Failures</th>
-                                        <th>Vendor</th>
-                                        <th>CQE Cluster</th>
-                                        <th>Severity</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="tableBody">
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+            <div id="tableContainer" style="display: block;">
+                <div class="loading">
+                    <div class="loading-spinner"></div>
+                    <p style="margin-top: 10px;">Loading data...</p>
+                </div>
+                <div class="table-container" style="display: none;">
+                    <table id="dataTable">
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>USID</th>
+                                <th>Metric Name</th>
+                                <th>Avg Failures</th>
+                                <th>Total Failures</th>
+                                <th>Vendor</th>
+                                <th>CQE Cluster</th>
+                                <th>Severity</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
+    </div>
 
-        <script>
-            // API endpoint - Update this to your Flask server URL
-            const API_URL = 'http://localhost:5000/api';
+    <script>
+        // API endpoint - Update this to your Flask server URL
+        const API_URL = 'http://localhost:5000/api';
 
-            let currentData = [];
-            let apiAvailable = false;
-            let metricMapping = {};
+        let currentData = [];
+        let apiAvailable = false;
+        let metricMapping = {};
 
-            // Utility function to format large numbers compactly
-            function formatCompactNumber(num) {
-                if (num === null || num === undefined || num === '' || isNaN(num)) return '0';
+        // Utility function to format large numbers compactly
+        function formatCompactNumber(num) {
+            if (num === null || num === undefined || num === '' || isNaN(num)) return '0';
 
-                // Convert to number and check validity
-                num = Number(num);
-                if (!isFinite(num)) return '0';
+            // Convert to number and check validity
+            num = Number(num);
+            if (!isFinite(num)) return '0';
 
-                num = Math.round(num); // Ensure integer
+            num = Math.round(num); // Ensure integer
 
-                if (num >= 1000000) {
-                    return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
-                } else if (num >= 1000) {
-                    return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+            } else if (num >= 1000) {
+                return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+            } else {
+                return num.toString();
+            }
+        }
+
+        // Utility function to get full number with commas for tooltips
+        function formatFullNumber(num) {
+            if (num === null || num === undefined || num === '' || isNaN(num)) return '0';
+
+            // Convert to number and check validity
+            num = Number(num);
+            if (!isFinite(num)) return '0';
+
+            return Math.round(num).toLocaleString();
+        }
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function () {
+            setDefaultDates();
+            checkAPIConnection();
+        });
+
+        async function checkAPIConnection() {
+            try {
+                const response = await fetch(`${API_URL}/health`);
+                if (response.ok) {
+                    apiAvailable = true;
+                    console.log('✅ Connected to Flask API');
+                    showSuccessMessage('Connected to Snowflake API successfully!');
+                    loadFilterOptions();
+                    fetchData();
                 } else {
-                    return num.toString();
-                }
-            }
-
-            // Utility function to get full number with commas for tooltips
-            function formatFullNumber(num) {
-                if (num === null || num === undefined || num === '' || isNaN(num)) return '0';
-
-                // Convert to number and check validity
-                num = Number(num);
-                if (!isFinite(num)) return '0';
-
-                return Math.round(num).toLocaleString();
-            }
-
-            // Initialize dashboard
-            document.addEventListener('DOMContentLoaded', function () {
-                setDefaultDates();
-                checkAPIConnection();
-            });
-
-            async function checkAPIConnection() {
-                try {
-                    const response = await fetch(`${API_URL}/health`);
-                    if (response.ok) {
-                        apiAvailable = true;
-                        console.log('✅ Connected to Flask API');
-                        showSuccessMessage('Connected to Snowflake API successfully!');
-                        loadFilterOptions();
-                        fetchData();
-                    } else {
-                        handleAPIError();
-                    }
-                } catch (error) {
-                    console.error('❌ Flask API not reachable:', error);
                     handleAPIError();
                 }
+            } catch (error) {
+                console.error('❌ Flask API not reachable:', error);
+                handleAPIError();
             }
+        }
 
-            function handleAPIError() {
-                apiAvailable = false;
-                showErrorMessage('Flask API is not running. Using sample data. <br>To connect to Snowflake: <br>1. Run: python app.py <br>2. Refresh this page');
-                useSampleData();
-                setTimeout(() => {
-                    fetchData();
-                }, 1000);
-            }
+        function handleAPIError() {
+            apiAvailable = false;
+            showErrorMessage('Flask API is not running. Using sample data. <br>To connect to Snowflake: <br>1. Run: python app.py <br>2. Refresh this page');
+            useSampleData();
+            setTimeout(() => {
+                fetchData();
+            }, 1000);
+        }
 
-            function showErrorMessage(message) {
-                const alertDiv = document.createElement('div');
-                alertDiv.className = 'error-message';
-                alertDiv.innerHTML = message;
-                document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.filters-section'));
-                setTimeout(() => alertDiv.remove(), 10000);
-            }
+        function showErrorMessage(message) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'error-message';
+            alertDiv.innerHTML = message;
+            document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.filters-section'));
+            setTimeout(() => alertDiv.remove(), 10000);
+        }
 
-            function showSuccessMessage(message) {
-                const alertDiv = document.createElement('div');
-                alertDiv.className = 'success-message';
-                alertDiv.innerHTML = message;
-                document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.filters-section'));
-                setTimeout(() => alertDiv.remove(), 5000);
-            }
+        function showSuccessMessage(message) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'success-message';
+            alertDiv.innerHTML = message;
+            document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.filters-section'));
+            setTimeout(() => alertDiv.remove(), 5000);
+        }
 
-            function setDefaultDates() {
-                const today = new Date();
-                const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+        function setDefaultDates() {
+            const today = new Date();
+            const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-                document.getElementById('periodEnd').value = today.toISOString().split('T')[0];
-                document.getElementById('periodStart').value = lastWeek.toISOString().split('T')[0];
-            }
+            document.getElementById('periodEnd').value = today.toISOString().split('T')[0];
+            document.getElementById('periodStart').value = lastWeek.toISOString().split('T')[0];
+        }
 
-            async function loadFilterOptions() {
-                try {
-                    // Fetch filter options from API
-                    const response = await fetch(`${API_URL}/filters`);
+        async function loadFilterOptions() {
+            try {
+                // Fetch filter options from API
+                const response = await fetch(`${API_URL}/filters`);
 
-                    if (response.ok) {
-                        const data = await response.json();
+                if (response.ok) {
+                    const data = await response.json();
 
-                        // Store metric mapping if available
-                        if (data.metricMapping) {
-                            metricMapping = data.metricMapping;
-                        }
-
-                        populateSelect('submarket', data.submarkets);
-                        populateSelect('cqeCluster', data.cqeClusters);
-                        populateSelect('metricName', data.metricNames);
-                    } else {
-                        // Use sample data if API is not available
-                        useSampleData();
+                    // Store metric mapping if available
+                    if (data.metricMapping) {
+                        metricMapping = data.metricMapping;
                     }
-                } catch (error) {
-                    console.error('Error loading filters:', error);
+
+                    populateSelect('submarket', data.submarkets);
+                    populateSelect('cqeCluster', data.cqeClusters);
+                    populateSelect('metricName', data.metricNames);
+                } else {
+                    // Use sample data if API is not available
                     useSampleData();
                 }
+            } catch (error) {
+                console.error('Error loading filters:', error);
+                useSampleData();
+            }
+        }
+
+        function populateSelect(elementId, options) {
+            const select = document.getElementById(elementId);
+            select.innerHTML = '<option value="">All</option>';
+
+            if (options && options.length > 0) {
+                options.forEach(option => {
+                    const opt = document.createElement('option');
+                    opt.value = option;
+                    opt.textContent = option;
+                    select.appendChild(opt);
+                });
+            }
+        }
+
+        async function fetchData() {
+            const filters = {
+                submarket: document.getElementById('submarket').value,
+                cqeCluster: document.getElementById('cqeCluster').value,
+                periodStart: document.getElementById('periodStart').value,
+                periodEnd: document.getElementById('periodEnd').value,
+                metricName: document.getElementById('metricName').value,
+                usid: document.getElementById('usid').value
+            };
+
+            showLoading();
+
+            if (!apiAvailable) {
+                // Use sample data if API is not available
+                generateSampleData();
+                return;
             }
 
-            function populateSelect(elementId, options) {
-                const select = document.getElementById(elementId);
-                select.innerHTML = '<option value="">All</option>';
+            try {
+                const queryParams = new URLSearchParams(filters).toString();
+                const response = await fetch(`${API_URL}/data?${queryParams}`);
 
-                if (options && options.length > 0) {
-                    options.forEach(option => {
-                        const opt = document.createElement('option');
-                        opt.value = option;
-                        opt.textContent = option;
-                        select.appendChild(opt);
+                if (response.ok) {
+                    const data = await response.json();
+                    currentData = data;
+                    updateDashboard(data);
+                } else {
+                    // Use sample data if API returns an error
+                    console.error('API returned error:', response.status);
+                    generateSampleData();
+                }
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                generateSampleData();
+            }
+        }
+
+        function generateSampleData() {
+            // Generate sample aggregated data for demonstration
+            const sampleData = [];
+            const metrics = ['V-CDR', 'NS/ESO', 'Quality RSRP', 'Quality RSRQ', 'V-ACC', 'V-ACC-E2E', 'D-ACC', 'DLTPUT', 'ULTPUT', 'D-RET', 'WIFI-RET'];
+            const vendors = ['Nokia', 'Ericsson', 'Huawei', 'Samsung'];
+            const clusters = ['CQE_EAST', 'CQE_WEST', 'CQE_CENTRAL', 'CQE_SOUTH'];
+            const submarkets = ['NYC', 'LA', 'Chicago', 'Houston', 'Phoenix'];
+
+            // Check if a metric filter is selected
+            const selectedMetric = document.getElementById('metricName').value;
+
+            if (!selectedMetric) {
+                // No metric filter - aggregate all metrics per USID
+                for (let i = 0; i < 50; i++) {
+                    const usid = `US${10000 + i}`;
+
+                    // Generate random failures with realistic distribution
+                    let avgFailures;
+                    const rand = Math.random();
+                    if (rand > 0.95) {
+                        // 5% critical offenders - very high average
+                        avgFailures = Math.floor(Math.random() * 30000) + 10000;
+                    } else if (rand > 0.8) {
+                        // 15% high offenders
+                        avgFailures = Math.floor(Math.random() * 5000) + 1000;
+                    } else if (rand > 0.5) {
+                        // 30% medium offenders
+                        avgFailures = Math.floor(Math.random() * 500) + 100;
+                    } else {
+                        // 50% low or no failures
+                        avgFailures = Math.floor(Math.random() * 100);
+                    }
+
+                    // Random number of records (simulating multiple metrics and dates)
+                    const recordCount = Math.floor(Math.random() * 100) + 20;
+                    const totalFailures = avgFailures * recordCount;
+
+                    sampleData.push({
+                        USID: usid,
+                        METRICNAME: 'ALL',
+                        METRIC_DISPLAY: 'All',
+                        AVG_EXTRAFAILURES: avgFailures,
+                        TOTAL_EXTRAFAILURES: totalFailures,
+                        RECORD_COUNT: recordCount,
+                        EXTRAFAILURES: avgFailures, // For compatibility
+                        VENDOR: vendors[Math.floor(Math.random() * vendors.length)],
+                        CQECLUSTER: clusters[Math.floor(Math.random() * clusters.length)],
+                        SUBMKT: submarkets[Math.floor(Math.random() * submarkets.length)],
+                        EARLIEST_PERIOD: new Date(Date.now() - recordCount * 24 * 60 * 60 * 1000).toISOString(),
+                        LATEST_PERIOD: new Date().toISOString()
                     });
                 }
-            }
-
-            async function fetchData() {
-                const filters = {
-                    submarket: document.getElementById('submarket').value,
-                    cqeCluster: document.getElementById('cqeCluster').value,
-                    periodStart: document.getElementById('periodStart').value,
-                    periodEnd: document.getElementById('periodEnd').value,
-                    metricName: document.getElementById('metricName').value,
-                    usid: document.getElementById('usid').value
-                };
-
-                showLoading();
-
-                if (!apiAvailable) {
-                    // Use sample data if API is not available
-                    generateSampleData();
-                    return;
-                }
-
-                try {
-                    const queryParams = new URLSearchParams(filters).toString();
-                    const response = await fetch(`${API_URL}/data?${queryParams}`);
-
-                    if (response.ok) {
-                        const data = await response.json();
-                        currentData = data;
-                        updateDashboard(data);
-                    } else {
-                        // Use sample data if API returns an error
-                        console.error('API returned error:', response.status);
-                        generateSampleData();
-                    }
-                } catch (error) {
-                    console.error('Error fetching data:', error);
-                    generateSampleData();
-                }
-            }
-
-            function generateSampleData() {
-                // Generate sample aggregated data for demonstration
-                const sampleData = [];
-                const metrics = ['V-CDR', 'NS/ESO', 'Quality RSRP', 'Quality RSRQ', 'V-ACC', 'V-ACC-E2E', 'D-ACC', 'DLTPUT', 'ULTPUT', 'D-RET', 'WIFI-RET'];
-                const vendors = ['Nokia', 'Ericsson', 'Huawei', 'Samsung'];
-                const clusters = ['CQE_EAST', 'CQE_WEST', 'CQE_CENTRAL', 'CQE_SOUTH'];
-                const submarkets = ['NYC', 'LA', 'Chicago', 'Houston', 'Phoenix'];
-
-                // Generate unique USID + Metric combinations
+            } else {
+                // Specific metric filter - show USID + Metric combinations
                 const usedCombinations = new Set();
 
                 for (let i = 0; i < 100; i++) {
                     const usid = `US${10000 + Math.floor(i / 2)}`; // Each USID appears with ~2 metrics
-                    const metricIdx = Math.floor(Math.random() * metrics.length);
-                    const metric = metrics[metricIdx];
+                    const metric = selectedMetric;
                     const combination = `${usid}-${metric}`;
 
                     // Skip if this combination already exists
@@ -645,139 +692,148 @@
                         LATEST_PERIOD: new Date().toISOString()
                     });
                 }
-
-                // Also populate filter options with sample data
-                populateSelect('submarket', submarkets);
-                populateSelect('cqeCluster', clusters);
-                populateSelect('metricName', metrics);
-
-                currentData = sampleData;
-                updateDashboard(sampleData);
             }
 
-            function useSampleData() {
-                generateSampleData();
-            }
+            // Also populate filter options with sample data
+            populateSelect('submarket', submarkets);
+            populateSelect('cqeCluster', clusters);
+            populateSelect('metricName', metrics);
 
-            function updateDashboard(data) {
-                hideLoading();
+            currentData = sampleData;
+            updateDashboard(sampleData);
+        }
 
-                // Update statistics
-                updateStats(data);
+        function useSampleData() {
+            generateSampleData();
+        }
 
-                // Update table
-                updateTable(data);
-            }
+        function updateDashboard(data) {
+            hideLoading();
 
-            function updateStats(data) {
-                // Count total unique USID+Metric combinations with failures > 0
-                const offenders = data.filter(row => {
-                    const avgFailures = Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0;
-                    return isFinite(avgFailures) && avgFailures > 0;
-                });
-                document.getElementById('totalOffenders').textContent = offenders.length;
+            // Update statistics
+            updateStats(data);
 
-                if (data.length > 0) {
-                    // Calculate total failures across all records
-                    const totalFailures = data.reduce((sum, row) => {
-                        // Use TOTAL_EXTRAFAILURES if available, otherwise calculate from average
-                        const total = row.TOTAL_EXTRAFAILURES ?
-                            Number(row.TOTAL_EXTRAFAILURES) :
-                            (Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0) * (row.RECORD_COUNT || 1);
-                        return sum + (isFinite(total) ? total : 0);
-                    }, 0);
+            // Update table
+            updateTable(data);
+        }
 
-                    document.getElementById('totalFailures').textContent = formatCompactNumber(totalFailures);
-                    document.getElementById('totalFailures').title = `Total: ${formatFullNumber(totalFailures)}`;
+        function updateStats(data) {
+            // Check if we're showing "All" metrics or specific metrics
+            const isShowingAllMetrics = data.length > 0 && (data[0].METRIC_DISPLAY === 'All' || data[0].METRICNAME === 'ALL');
 
-                    // Count critical offenders based on percentage of total (>= 10% of total failures)
-                    const critical = data.filter(row => {
-                        const rowTotal = row.TOTAL_EXTRAFAILURES ?
-                            Number(row.TOTAL_EXTRAFAILURES) :
-                            (Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0) * (row.RECORD_COUNT || 1);
-                        const validTotal = isFinite(rowTotal) ? rowTotal : 0;
-                        const percentageOfTotal = totalFailures > 0 ? (validTotal / totalFailures) * 100 : 0;
-                        return percentageOfTotal >= 10;
-                    }).length;
-                    document.getElementById('criticalOffenders').textContent = critical;
+            // Count total offenders
+            const offenders = data.filter(row => {
+                const avgFailures = Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0;
+                return isFinite(avgFailures) && avgFailures > 0;
+            });
+            document.getElementById('totalOffenders').textContent = offenders.length;
 
-                    // Count unique USIDs (now each USID appears only once per metric)
-                    const uniqueUsids = new Set(data.map(row => row.USID)).size;
-                    document.getElementById('activeUsids').textContent = uniqueUsids;
-
-                    // Update change indicators
-                    document.getElementById('offenderChange').textContent = `${offenders.length} USID+Metric pairs`;
-                    const avgFailuresPerPair = totalFailures / data.length;
-                    document.getElementById('failureChange').textContent = `Avg: ${formatCompactNumber(avgFailuresPerPair)} per pair`;
-                    document.getElementById('criticalChange').textContent = `≥10% of total failures`;
-                    document.getElementById('usidChange').textContent = `${uniqueUsids} unique sites`;
-                }
-            }
-
-            function updateTable(data) {
-                const tbody = document.getElementById('tableBody');
-                tbody.innerHTML = '';
-
-                // Calculate total failures in current filtered dataset for dynamic severity
-                const datasetTotalFailures = data.reduce((sum, row) => {
+            if (data.length > 0) {
+                // Calculate total failures across all records
+                const totalFailures = data.reduce((sum, row) => {
+                    // Use TOTAL_EXTRAFAILURES if available, otherwise calculate from average
                     const total = row.TOTAL_EXTRAFAILURES ?
                         Number(row.TOTAL_EXTRAFAILURES) :
                         (Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0) * (row.RECORD_COUNT || 1);
                     return sum + (isFinite(total) ? total : 0);
                 }, 0);
 
-                // Sort by AVG_EXTRAFAILURES (worst average offenders first) with NaN handling
-                const sortedData = data.sort((a, b) => {
-                    const avgFailuresA = Number(a.AVG_EXTRAFAILURES || a.EXTRAFAILURES) || 0;
-                    const avgFailuresB = Number(b.AVG_EXTRAFAILURES || b.EXTRAFAILURES) || 0;
-                    // Check for NaN/Infinity
-                    const validA = isFinite(avgFailuresA) ? avgFailuresA : 0;
-                    const validB = isFinite(avgFailuresB) ? avgFailuresB : 0;
-                    return validB - validA;
-                }).slice(0, 100); // Show top 100 offenders
+                document.getElementById('totalFailures').textContent = formatCompactNumber(totalFailures);
+                document.getElementById('totalFailures').title = `Total: ${formatFullNumber(totalFailures)}`;
 
-                sortedData.forEach((row, index) => {
-                    const tr = document.createElement('tr');
+                // Count critical offenders based on percentage of total (>= 10% of total failures)
+                const critical = data.filter(row => {
+                    const rowTotal = row.TOTAL_EXTRAFAILURES ?
+                        Number(row.TOTAL_EXTRAFAILURES) :
+                        (Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0) * (row.RECORD_COUNT || 1);
+                    const validTotal = isFinite(rowTotal) ? rowTotal : 0;
+                    const percentageOfTotal = totalFailures > 0 ? (validTotal / totalFailures) * 100 : 0;
+                    return percentageOfTotal >= 10;
+                }).length;
+                document.getElementById('criticalOffenders').textContent = critical;
 
-                    // Get average and total failures
-                    const avgFailures = Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0;
-                    const totalFailures = Number(row.TOTAL_EXTRAFAILURES) || (avgFailures * (row.RECORD_COUNT || 1));
+                // Count unique USIDs
+                const uniqueUsids = new Set(data.map(row => row.USID)).size;
+                document.getElementById('activeUsids').textContent = uniqueUsids;
 
-                    const validAvg = isFinite(avgFailures) ? Math.round(avgFailures) : 0;
-                    const validTotal = isFinite(totalFailures) ? Math.round(totalFailures) : 0;
+                // Update change indicators based on aggregation mode
+                if (isShowingAllMetrics) {
+                    document.getElementById('offenderChange').textContent = `${offenders.length} USIDs (all metrics)`;
+                } else {
+                    document.getElementById('offenderChange').textContent = `${offenders.length} USID+Metric pairs`;
+                }
 
-                    // Calculate percentage of total failures for dynamic severity
-                    const percentageOfTotal = datasetTotalFailures > 0 ?
-                        (validTotal / datasetTotalFailures) * 100 : 0;
+                const avgFailuresPerEntry = totalFailures / data.length;
+                document.getElementById('failureChange').textContent = `Avg: ${formatCompactNumber(avgFailuresPerEntry)} per entry`;
+                document.getElementById('criticalChange').textContent = `≥10% of total failures`;
+                document.getElementById('usidChange').textContent = `${uniqueUsids} unique sites`;
+            }
+        }
 
-                    // Determine severity based on percentage of total failures
-                    let severity, severityClass;
-                    if (percentageOfTotal >= 10) {
-                        // 10% or more of total failures
-                        severity = 'CRITICAL';
-                        severityClass = 'severity-high';
-                    } else if (percentageOfTotal >= 5) {
-                        // 5-10% of total failures
-                        severity = 'HIGH';
-                        severityClass = 'severity-high';
-                    } else if (percentageOfTotal >= 1) {
-                        // 1-5% of total failures
-                        severity = 'MEDIUM';
-                        severityClass = 'severity-medium';
-                    } else {
-                        // Less than 1% of total failures
-                        severity = 'LOW';
-                        severityClass = 'severity-low';
-                    }
+        function updateTable(data) {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
 
-                    // Use display name if available, otherwise use original metric name
-                    const metricDisplay = row.METRIC_DISPLAY || row.METRICNAME || '-';
+            // Calculate total failures in current filtered dataset for dynamic severity
+            const datasetTotalFailures = data.reduce((sum, row) => {
+                const total = row.TOTAL_EXTRAFAILURES ?
+                    Number(row.TOTAL_EXTRAFAILURES) :
+                    (Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0) * (row.RECORD_COUNT || 1);
+                return sum + (isFinite(total) ? total : 0);
+            }, 0);
 
-                    // Create cells with compact numbers and tooltips
-                    const avgFailuresCell = `<strong title="Average: ${formatFullNumber(validAvg)} failures">${formatCompactNumber(validAvg)}</strong>`;
-                    const totalFailuresCell = `<strong title="Total: ${formatFullNumber(validTotal)} failures (${percentageOfTotal.toFixed(2)}% of dataset)">${formatCompactNumber(validTotal)}</strong>`;
+            // Sort by AVG_EXTRAFAILURES (worst average offenders first) with NaN handling
+            const sortedData = data.sort((a, b) => {
+                const avgFailuresA = Number(a.AVG_EXTRAFAILURES || a.EXTRAFAILURES) || 0;
+                const avgFailuresB = Number(b.AVG_EXTRAFAILURES || b.EXTRAFAILURES) || 0;
+                // Check for NaN/Infinity
+                const validA = isFinite(avgFailuresA) ? avgFailuresA : 0;
+                const validB = isFinite(avgFailuresB) ? avgFailuresB : 0;
+                return validB - validA;
+            }).slice(0, 100); // Show top 100 offenders
 
-                    tr.innerHTML = `
+            sortedData.forEach((row, index) => {
+                const tr = document.createElement('tr');
+
+                // Get average and total failures
+                const avgFailures = Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0;
+                const totalFailures = Number(row.TOTAL_EXTRAFAILURES) || (avgFailures * (row.RECORD_COUNT || 1));
+
+                const validAvg = isFinite(avgFailures) ? Math.round(avgFailures) : 0;
+                const validTotal = isFinite(totalFailures) ? Math.round(totalFailures) : 0;
+
+                // Calculate percentage of total failures for dynamic severity
+                const percentageOfTotal = datasetTotalFailures > 0 ?
+                    (validTotal / datasetTotalFailures) * 100 : 0;
+
+                // Determine severity based on percentage of total failures
+                let severity, severityClass;
+                if (percentageOfTotal >= 10) {
+                    // 10% or more of total failures
+                    severity = 'CRITICAL';
+                    severityClass = 'severity-high';
+                } else if (percentageOfTotal >= 5) {
+                    // 5-10% of total failures
+                    severity = 'HIGH';
+                    severityClass = 'severity-high';
+                } else if (percentageOfTotal >= 1) {
+                    // 1-5% of total failures
+                    severity = 'MEDIUM';
+                    severityClass = 'severity-medium';
+                } else {
+                    // Less than 1% of total failures
+                    severity = 'LOW';
+                    severityClass = 'severity-low';
+                }
+
+                // Use display name if available, otherwise use original metric name
+                const metricDisplay = row.METRIC_DISPLAY || row.METRICNAME || '-';
+
+                // Create cells with compact numbers and tooltips
+                const avgFailuresCell = `<strong title="Average: ${formatFullNumber(validAvg)} failures">${formatCompactNumber(validAvg)}</strong>`;
+                const totalFailuresCell = `<strong title="Total: ${formatFullNumber(validTotal)} failures (${percentageOfTotal.toFixed(2)}% of dataset)">${formatCompactNumber(validTotal)}</strong>`;
+
+                tr.innerHTML = `
                     <td><strong>#${index + 1}</strong></td>
                     <td>${row.USID || '-'}</td>
                     <td>${metricDisplay}</td>
@@ -787,89 +843,100 @@
                     <td>${row.CQECLUSTER || '-'}</td>
                     <td><span class="${severityClass}" title="${percentageOfTotal.toFixed(2)}% of total failures">${severity}</span></td>
                 `;
-                    tbody.appendChild(tr);
-                });
+                tbody.appendChild(tr);
+            });
+        }
+
+        function resetFilters() {
+            document.getElementById('submarket').value = '';
+            document.getElementById('cqeCluster').value = '';
+            document.getElementById('metricName').value = '';
+            document.getElementById('usid').value = '';
+            setDefaultDates();
+            fetchData();
+        }
+
+        function exportData() {
+            if (currentData.length === 0) {
+                alert('No data to export');
+                return;
             }
 
-            function resetFilters() {
-                document.getElementById('submarket').value = '';
-                document.getElementById('cqeCluster').value = '';
-                document.getElementById('metricName').value = '';
-                document.getElementById('usid').value = '';
-                setDefaultDates();
-                fetchData();
-            }
+            // Check if we're showing "All" metrics
+            const isShowingAllMetrics = currentData.length > 0 &&
+                (currentData[0].METRIC_DISPLAY === 'All' || currentData[0].METRICNAME === 'ALL');
 
-            function exportData() {
-                if (currentData.length === 0) {
-                    alert('No data to export');
-                    return;
-                }
+            // Sort data by average failures for export with NaN handling
+            const sortedData = currentData.sort((a, b) => {
+                const avgFailuresA = Number(a.AVG_EXTRAFAILURES || a.EXTRAFAILURES) || 0;
+                const avgFailuresB = Number(b.AVG_EXTRAFAILURES || b.EXTRAFAILURES) || 0;
+                const validA = isFinite(avgFailuresA) ? avgFailuresA : 0;
+                const validB = isFinite(avgFailuresB) ? avgFailuresB : 0;
+                return validB - validA;
+            });
 
-                // Sort data by average failures for export with NaN handling
-                const sortedData = currentData.sort((a, b) => {
-                    const avgFailuresA = Number(a.AVG_EXTRAFAILURES || a.EXTRAFAILURES) || 0;
-                    const avgFailuresB = Number(b.AVG_EXTRAFAILURES || b.EXTRAFAILURES) || 0;
-                    const validA = isFinite(avgFailuresA) ? avgFailuresA : 0;
-                    const validB = isFinite(avgFailuresB) ? avgFailuresB : 0;
-                    return validB - validA;
-                });
+            // Add rank to each row
+            const exportData = sortedData.map((row, index) => {
+                const avgFailures = Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0;
+                const totalFailures = Number(row.TOTAL_EXTRAFAILURES) || (avgFailures * (row.RECORD_COUNT || 1));
+                const validAvg = isFinite(avgFailures) ? Math.round(avgFailures) : 0;
+                const validTotal = isFinite(totalFailures) ? Math.round(totalFailures) : 0;
 
-                // Add rank to each row
-                const exportData = sortedData.map((row, index) => {
-                    const avgFailures = Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0;
-                    const totalFailures = Number(row.TOTAL_EXTRAFAILURES) || (avgFailures * (row.RECORD_COUNT || 1));
-                    const validAvg = isFinite(avgFailures) ? Math.round(avgFailures) : 0;
-                    const validTotal = isFinite(totalFailures) ? Math.round(totalFailures) : 0;
+                return {
+                    Rank: index + 1,
+                    USID: row.USID || '',
+                    MetricName: row.METRIC_DISPLAY || row.METRICNAME || '',
+                    AverageFailures: validAvg,
+                    TotalFailures: validTotal,
+                    RecordCount: row.RECORD_COUNT || 1,
+                    Vendor: row.VENDOR || '',
+                    Cluster: row.CQECLUSTER || '',
+                    Submarket: row.SUBMKT || '',
+                    EarliestPeriod: row.EARLIEST_PERIOD || '',
+                    LatestPeriod: row.LATEST_PERIOD || '',
+                    AggregationType: isShowingAllMetrics ? 'All Metrics' : 'Single Metric'
+                };
+            });
 
-                    return {
-                        Rank: index + 1,
-                        USID: row.USID || '',
-                        MetricName: row.METRIC_DISPLAY || row.METRICNAME || '',
-                        AverageFailures: validAvg,
-                        TotalFailures: validTotal,
-                        RecordCount: row.RECORD_COUNT || 1,
-                        Vendor: row.VENDOR || '',
-                        Cluster: row.CQECLUSTER || '',
-                        Submarket: row.SUBMKT || '',
-                        EarliestPeriod: row.EARLIEST_PERIOD || '',
-                        LatestPeriod: row.LATEST_PERIOD || ''
-                    };
-                });
+            // Convert to CSV
+            const headers = Object.keys(exportData[0]);
+            const csvContent = [
+                headers.join(','),
+                ...exportData.map(row => headers.map(h => {
+                    // Properly escape CSV values
+                    const value = String(row[h] || '');
+                    return value.includes(',') || value.includes('"') || value.includes('\n')
+                        ? `"${value.replace(/"/g, '""')}"`
+                        : value;
+                }).join(','))
+            ].join('\n');
 
-                // Convert to CSV
-                const headers = Object.keys(exportData[0]);
-                const csvContent = [
-                    headers.join(','),
-                    ...exportData.map(row => headers.map(h => {
-                        // Properly escape CSV values
-                        const value = String(row[h] || '');
-                        return value.includes(',') || value.includes('"') || value.includes('\n')
-                            ? `"${value.replace(/"/g, '""')}"`
-                            : value;
-                    }).join(','))
-                ].join('\n');
+            // Download CSV
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
 
-                // Download CSV
-                const blob = new Blob([csvContent], { type: 'text/csv' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `cqi_offenders_aggregated_${new Date().toISOString().split('T')[0]}.csv`;
-                a.click();
-                window.URL.revokeObjectURL(url);
-            }
+            // Name file based on aggregation type
+            const fileName = isShowingAllMetrics ?
+                `cqi_offenders_all_metrics_${new Date().toISOString().split('T')[0]}.csv` :
+                `cqi_offenders_filtered_${new Date().toISOString().split('T')[0]}.csv`;
 
-            function showLoading() {
-                document.querySelector('.loading').style.display = 'block';
-                document.querySelector('.table-container').style.display = 'none';
-            }
+            a.download = fileName;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
 
-            function hideLoading() {
-                document.querySelector('.loading').style.display = 'none';
-                document.querySelector('.table-container').style.display = 'block';
-            }
-        </script>
+        function showLoading() {
+            document.querySelector('.loading').style.display = 'block';
+            document.querySelector('.table-container').style.display = 'none';
+        }
+
+        function hideLoading() {
+            document.querySelector('.loading').style.display = 'none';
+            document.querySelector('.table-container').style.display = 'block';
+        }
+    </script>
 </body>
 
 </html>

@@ -256,7 +256,7 @@ def get_filter_options():
 
 @app.route('/api/data', methods=['GET'])
 def get_cqi_data():
-    """Get CQI data based on filters - aggregated by USID + METRICNAME"""
+    """Get CQI data - aggregated by USID only when no metric filter, or by USID+METRICNAME when filtered"""
     try:
         # Log incoming request
         logger.info(
@@ -285,24 +285,48 @@ def get_cqi_data():
             'VOLTE_WIFI_CDR_25': 'WIFI-RET'
         }
 
-        # Build aggregated query - Group by USID + METRICNAME
-        query = """
-            SELECT 
-                USID,
-                METRICNAME,
-                AVG(EXTRAFAILURES) as AVG_EXTRAFAILURES,
-                SUM(EXTRAFAILURES) as TOTAL_EXTRAFAILURES,
-                COUNT(*) as RECORD_COUNT,
-                MAX(VENDOR) as VENDOR,
-                MAX(CQECLUSTER) as CQECLUSTER,
-                MAX(SUBMKT) as SUBMKT,
-                AVG(FOCUSAREA_L1CQIACTUAL) as AVG_ACTUAL,
-                AVG(CQITARGET) as AVG_TARGET,
-                MIN(PERIODSTART) as EARLIEST_PERIOD,
-                MAX(PERIODEND) as LATEST_PERIOD
-            FROM CQI2025_CQX_CONTRIBUTION
-            WHERE 1=1
-        """
+        # Determine if we're aggregating by USID only or USID+METRICNAME
+        # If no metric filter, aggregate all metrics per USID
+        aggregate_all_metrics = not metric_name
+
+        if aggregate_all_metrics:
+            # Aggregate ALL metrics per USID when no specific metric is filtered
+            query = """
+                SELECT 
+                    USID,
+                    'ALL' as METRICNAME,
+                    AVG(EXTRAFAILURES) as AVG_EXTRAFAILURES,
+                    SUM(EXTRAFAILURES) as TOTAL_EXTRAFAILURES,
+                    COUNT(*) as RECORD_COUNT,
+                    MAX(VENDOR) as VENDOR,
+                    MAX(CQECLUSTER) as CQECLUSTER,
+                    MAX(SUBMKT) as SUBMKT,
+                    AVG(FOCUSAREA_L1CQIACTUAL) as AVG_ACTUAL,
+                    AVG(CQITARGET) as AVG_TARGET,
+                    MIN(PERIODSTART) as EARLIEST_PERIOD,
+                    MAX(PERIODEND) as LATEST_PERIOD
+                FROM CQI2025_CQX_CONTRIBUTION
+                WHERE 1=1
+            """
+        else:
+            # Aggregate by USID + METRICNAME when a specific metric is filtered
+            query = """
+                SELECT 
+                    USID,
+                    METRICNAME,
+                    AVG(EXTRAFAILURES) as AVG_EXTRAFAILURES,
+                    SUM(EXTRAFAILURES) as TOTAL_EXTRAFAILURES,
+                    COUNT(*) as RECORD_COUNT,
+                    MAX(VENDOR) as VENDOR,
+                    MAX(CQECLUSTER) as CQECLUSTER,
+                    MAX(SUBMKT) as SUBMKT,
+                    AVG(FOCUSAREA_L1CQIACTUAL) as AVG_ACTUAL,
+                    AVG(CQITARGET) as AVG_TARGET,
+                    MIN(PERIODSTART) as EARLIEST_PERIOD,
+                    MAX(PERIODEND) as LATEST_PERIOD
+                FROM CQI2025_CQX_CONTRIBUTION
+                WHERE 1=1
+            """
 
         # Add filter for specific metrics only
         allowed_metrics = list(metric_mapping.keys())
@@ -328,7 +352,7 @@ def get_cqi_data():
             params.append(f"{period_end} 23:59:59")
 
         if metric_name:
-            # Reverse lookup the actual metric name from display name
+            # When a specific metric is selected, filter by it
             reverse_mapping = {v: k for k, v in metric_mapping.items()}
             actual_metric = reverse_mapping.get(metric_name, metric_name)
             query += " AND METRICNAME = %s"
@@ -338,19 +362,28 @@ def get_cqi_data():
             query += " AND USID = %s"
             params.append(usid)
 
-        # Group by USID and METRICNAME, order by average failures
-        query += """ 
-            GROUP BY USID, METRICNAME
-            ORDER BY AVG_EXTRAFAILURES DESC NULLS LAST
-            LIMIT 1000
-        """
+        # Group by clause depends on aggregation mode
+        if aggregate_all_metrics:
+            # Group by USID only when aggregating all metrics
+            query += """ 
+                GROUP BY USID
+                ORDER BY AVG_EXTRAFAILURES DESC NULLS LAST
+                LIMIT 1000
+            """
+        else:
+            # Group by USID and METRICNAME when filtering by specific metric
+            query += """ 
+                GROUP BY USID, METRICNAME
+                ORDER BY AVG_EXTRAFAILURES DESC NULLS LAST
+                LIMIT 1000
+            """
 
         # Execute query
         conn = get_snowflake_connection()
         cur = conn.cursor()
 
         logger.info(
-            f"Executing aggregated query with {len(params)} parameters")
+            f"Executing {'USID-only' if aggregate_all_metrics else 'USID+Metric'} aggregated query with {len(params)} parameters")
 
         if params:
             cur.execute(query, params)
@@ -397,7 +430,10 @@ def get_cqi_data():
                     record[col] = value
 
             # Add metric display name
-            if record.get('METRICNAME') in metric_mapping:
+            if aggregate_all_metrics or record.get('METRICNAME') == 'ALL':
+                # When aggregating all metrics, display "All"
+                record['METRIC_DISPLAY'] = 'All'
+            elif record.get('METRICNAME') in metric_mapping:
                 record['METRIC_DISPLAY'] = metric_mapping[record['METRICNAME']]
             else:
                 record['METRIC_DISPLAY'] = record.get('METRICNAME', '')
