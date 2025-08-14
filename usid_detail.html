@@ -126,6 +126,18 @@
             box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
         }
 
+        .btn-secondary {
+            background: #667eea;
+            color: white;
+            opacity: 0.9;
+        }
+
+        .btn-secondary:hover {
+            opacity: 1;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
         .chart-section {
             background: white;
             border-radius: 15px;
@@ -136,16 +148,26 @@
 
         .chart-header {
             margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px;
         }
 
         .chart-header h2 {
             color: #2d3748;
             font-size: 1.5rem;
+            margin: 0;
         }
 
         .chart-container {
             position: relative;
             height: 450px;
+        }
+
+        .chart-container canvas {
+            cursor: crosshair;
         }
 
         .stats-grid {
@@ -160,6 +182,14 @@
             border-radius: 10px;
             padding: 20px;
             text-align: center;
+            border: 1px solid #e2e8f0;
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            background: white;
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
         }
 
         .stat-card h3 {
@@ -174,6 +204,12 @@
             color: #2d3748;
             font-size: 1.8rem;
             font-weight: 700;
+            cursor: help;
+            transition: color 0.3s ease;
+        }
+
+        .stat-card .value:hover {
+            color: #667eea;
         }
 
         .loading {
@@ -216,6 +252,23 @@
             font-size: 0.9rem;
             color: #0050b3;
         }
+
+        .tooltip-hint {
+            display: inline-block;
+            background: #f0f9ff;
+            border: 1px solid #bae7ff;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            color: #0050b3;
+            margin-top: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .tooltip-hint:hover {
+            background: #e6f7ff;
+            border-color: #91d5ff;
+        }
     </style>
 </head>
 
@@ -249,6 +302,8 @@
                 <div style="display: flex; gap: 10px; align-items: flex-end;">
                     <button class="btn btn-back" onclick="goBack()">← Back to Dashboard</button>
                     <button class="btn btn-refresh" onclick="refreshData()">Refresh Data</button>
+                    <button class="btn btn-secondary" onclick="toggleLegend()" id="legendToggle"
+                        title="Toggle legend visibility (Press 'L')">Hide Legend</button>
                 </div>
             </div>
         </div>
@@ -256,6 +311,7 @@
         <div class="chart-section">
             <div class="chart-header">
                 <h2>Extra Failures Over Time</h2>
+                <span class="tooltip-hint">💡 Hover over any data point for details</span>
             </div>
             <div id="loadingDiv" class="loading">
                 <div class="loading-spinner"></div>
@@ -268,19 +324,19 @@
                 <div class="stats-grid">
                     <div class="stat-card">
                         <h3>Average Failures</h3>
-                        <div class="value" id="avgFailures">0</div>
+                        <div class="value" id="avgFailures" title="Average across all data points">0</div>
                     </div>
                     <div class="stat-card">
                         <h3>Peak Failures</h3>
-                        <div class="value" id="peakFailures">0</div>
+                        <div class="value" id="peakFailures" title="Maximum value in dataset">0</div>
                     </div>
                     <div class="stat-card">
                         <h3>Total Data Points</h3>
-                        <div class="value" id="dataPoints">0</div>
+                        <div class="value" id="dataPoints" title="Number of measurements">0</div>
                     </div>
                     <div class="stat-card">
                         <h3>Active Metrics</h3>
-                        <div class="value" id="activeMetrics">0</div>
+                        <div class="value" id="activeMetrics" title="Number of different metrics shown">0</div>
                     </div>
                 </div>
             </div>
@@ -373,20 +429,20 @@
                 }
 
                 const response = await fetch(`${API_URL}/usid-detail?${params}`);
-                
+
                 if (response.ok) {
                     const data = await response.json();
                     currentData = data;
-                    
+
                     // Populate metric filter if not already done
                     populateMetricFilter(data);
-                    
+
                     // Update chart
                     updateChart(data);
-                    
+
                     // Update statistics
                     updateStatistics(data);
-                    
+
                     hideLoading();
                 } else {
                     throw new Error('Failed to fetch data');
@@ -401,10 +457,10 @@
         function populateMetricFilter(data) {
             const select = document.getElementById('metricFilter');
             const currentValue = select.value;
-            
+
             // Get unique metrics from data
             const metrics = [...new Set(data.map(d => d.METRIC_DISPLAY || d.METRICNAME))];
-            
+
             // Only repopulate if we have new metrics
             if (select.options.length <= 1 && metrics.length > 0) {
                 select.innerHTML = '<option value="">All Metrics</option>';
@@ -462,12 +518,18 @@
                 datasets.push({
                     label: metric,
                     data: data,
-                    borderColor: metricColors[metric] || `rgb(${Math.random()*255}, ${Math.random()*255}, ${Math.random()*255})`,
+                    borderColor: metricColors[metric] || `rgb(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255})`,
                     backgroundColor: 'transparent',
                     borderWidth: 2,
                     tension: 0.4,
                     pointRadius: 4,
-                    pointHoverRadius: 6
+                    pointHoverRadius: 8,
+                    pointBackgroundColor: metricColors[metric] || `rgb(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255})`,
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointHoverBackgroundColor: metricColors[metric] || `rgb(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255})`,
+                    pointHoverBorderColor: '#fff',
+                    pointHoverBorderWidth: 3
                 });
             });
 
@@ -487,20 +549,88 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    animation: {
+                        duration: 750,
+                        easing: 'easeInOutQuart'
+                    },
                     plugins: {
                         title: {
                             display: false
                         },
                         legend: {
                             display: true,
-                            position: 'top'
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 15,
+                                font: {
+                                    size: 12
+                                }
+                            }
                         },
                         tooltip: {
-                            mode: 'index',
+                            mode: 'nearest',
                             intersect: false,
+                            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+                            titleColor: '#fff',
+                            titleFont: {
+                                size: 14,
+                                weight: 'bold'
+                            },
+                            bodyColor: '#fff',
+                            bodyFont: {
+                                size: 13
+                            },
+                            footerColor: '#fff',
+                            footerFont: {
+                                size: 12,
+                                style: 'italic'
+                            },
+                            borderColor: '#667eea',
+                            borderWidth: 1,
+                            padding: 12,
+                            displayColors: true,
+                            boxPadding: 4,
+                            titleMarginBottom: 8,
+                            footerMarginTop: 8,
                             callbacks: {
-                                label: function(context) {
-                                    return context.dataset.label + ': ' + formatCompactNumber(context.parsed.y);
+                                title: function (tooltipItems) {
+                                    if (tooltipItems.length > 0) {
+                                        const date = tooltipItems[0].label;
+                                        return [`USID: ${currentUSID}`, `Date: ${date}`];
+                                    }
+                                    return '';
+                                },
+                                label: function (context) {
+                                    const metric = context.dataset.label;
+                                    const value = context.parsed.y;
+                                    const formattedValue = formatCompactNumber(value);
+                                    const fullValue = value.toLocaleString();
+                                    return `${metric}: ${formattedValue} (${fullValue})`;
+                                },
+                                afterLabel: function (context) {
+                                    // Add percentage change from previous point if available
+                                    const dataPoints = context.dataset.data;
+                                    const currentIndex = context.dataIndex;
+
+                                    if (currentIndex > 0) {
+                                        const currentValue = dataPoints[currentIndex].y;
+                                        const previousValue = dataPoints[currentIndex - 1].y;
+                                        const change = currentValue - previousValue;
+                                        const percentChange = ((change / previousValue) * 100).toFixed(1);
+                                        const arrow = change > 0 ? '↑' : change < 0 ? '↓' : '→';
+                                        const changeColor = change > 0 ? '+' : '';
+                                        return `Change: ${changeColor}${formatCompactNumber(change)} (${changeColor}${percentChange}%) ${arrow}`;
+                                    }
+                                    return '';
+                                },
+                                footer: function (tooltipItems) {
+                                    if (tooltipItems.length > 1) {
+                                        // Calculate total if multiple metrics shown
+                                        const total = tooltipItems.reduce((sum, item) => sum + item.parsed.y, 0);
+                                        return `Total: ${formatCompactNumber(total)}`;
+                                    }
+                                    return '';
                                 }
                             }
                         }
@@ -525,16 +655,20 @@
                             },
                             beginAtZero: true,
                             ticks: {
-                                callback: function(value) {
+                                callback: function (value) {
                                     return formatCompactNumber(value);
                                 }
                             }
                         }
                     },
                     interaction: {
-                        mode: 'nearest',
-                        axis: 'x',
-                        intersect: false
+                        mode: 'point',
+                        intersect: true
+                    },
+                    hover: {
+                        mode: 'point',
+                        intersect: true,
+                        animationDuration: 200
                     }
                 }
             });
@@ -542,21 +676,33 @@
 
         function updateStatistics(data) {
             const metricFilter = document.getElementById('metricFilter').value;
-            const filteredData = metricFilter ? 
-                data.filter(d => (d.METRIC_DISPLAY || d.METRICNAME) === metricFilter) : 
+            const filteredData = metricFilter ?
+                data.filter(d => (d.METRIC_DISPLAY || d.METRICNAME) === metricFilter) :
                 data;
 
             const failures = filteredData.map(d => Number(d.EXTRAFAILURES) || 0);
-            const avgFailures = failures.length > 0 ? 
+            const avgFailures = failures.length > 0 ?
                 failures.reduce((a, b) => a + b, 0) / failures.length : 0;
             const peakFailures = failures.length > 0 ? Math.max(...failures) : 0;
-            
+
             const uniqueMetrics = new Set(data.map(d => d.METRIC_DISPLAY || d.METRICNAME));
 
-            document.getElementById('avgFailures').textContent = formatCompactNumber(avgFailures);
-            document.getElementById('peakFailures').textContent = formatCompactNumber(peakFailures);
-            document.getElementById('dataPoints').textContent = filteredData.length;
-            document.getElementById('activeMetrics').textContent = metricFilter ? 1 : uniqueMetrics.size;
+            // Update values with compact display but full value in title
+            const avgElement = document.getElementById('avgFailures');
+            avgElement.textContent = formatCompactNumber(avgFailures);
+            avgElement.title = `Average: ${Math.round(avgFailures).toLocaleString()} failures`;
+
+            const peakElement = document.getElementById('peakFailures');
+            peakElement.textContent = formatCompactNumber(peakFailures);
+            peakElement.title = `Peak: ${Math.round(peakFailures).toLocaleString()} failures`;
+
+            const pointsElement = document.getElementById('dataPoints');
+            pointsElement.textContent = filteredData.length;
+            pointsElement.title = `${filteredData.length} measurements`;
+
+            const metricsElement = document.getElementById('activeMetrics');
+            metricsElement.textContent = metricFilter ? 1 : uniqueMetrics.size;
+            metricsElement.title = metricFilter ? `Showing: ${metricFilter}` : `${uniqueMetrics.size} different metrics`;
         }
 
         function generateSampleData() {
@@ -568,12 +714,12 @@
                 for (let i = 0; i < days; i++) {
                     const date = new Date();
                     date.setDate(date.getDate() - i);
-                    
+
                     // Generate realistic failure patterns
                     const baseValue = Math.random() * 50000 + 10000;
                     const variation = Math.sin(i / 3) * 10000;
                     const spike = (i % 7 === 0) ? Math.random() * 30000 : 0;
-                    
+
                     data.push({
                         USID: currentUSID,
                         METRICNAME: metric,
@@ -619,6 +765,16 @@
             fetchUSIDData();
         }
 
+        function toggleLegend() {
+            if (chart) {
+                chart.options.plugins.legend.display = !chart.options.plugins.legend.display;
+                chart.update();
+
+                const btn = document.getElementById('legendToggle');
+                btn.textContent = chart.options.plugins.legend.display ? 'Hide Legend' : 'Show Legend';
+            }
+        }
+
         // Event listeners
         document.getElementById('metricFilter').addEventListener('change', () => {
             if (currentData.length > 0) {
@@ -629,6 +785,13 @@
 
         document.getElementById('dateRange').addEventListener('change', () => {
             fetchUSIDData();
+        });
+
+        // Keyboard shortcut for toggling legend (press 'L')
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'l' || e.key === 'L') {
+                toggleLegend();
+            }
         });
 
         // Initialize on page load
