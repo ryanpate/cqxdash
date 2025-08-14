@@ -525,6 +525,130 @@ def get_summary_stats():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/usid-detail', methods=['GET'])
+def get_usid_detail():
+    """Get detailed metric data for a specific USID over time"""
+    try:
+        # Get parameters
+        usid = request.args.get('usid', '')
+        period_start = request.args.get('periodStart', '')
+        period_end = request.args.get('periodEnd', '')
+        metric_name = request.args.get('metricName', '')
+
+        if not usid:
+            return jsonify({'error': 'USID is required'}), 400
+
+        logger.info(f"USID detail request for {usid}")
+
+        # Define metric mapping
+        metric_mapping = {
+            'VOICE_CDR_RET_25': 'V-CDR',
+            'LTE_IQI_NS_ESO_25': 'NS/ESO',
+            'LTE_IQI_RSRP_25': 'Quality RSRP',
+            'LTE_IQI_QUALITY_25': 'Quality RSRQ',
+            'VOLTE_RAN_ACBACC_25_ALL': 'V-ACC',
+            'VOLTE_CDR_MOMT_ACC_25': 'V-ACC-E2E',
+            'ALLRAT_DACC_25': 'D-ACC',
+            'ALLRAT_DL_TPUT_25': 'DLTPUT',
+            'ALLRAT_UL_TPUT_25': 'ULTPUT',
+            'ALLRAT_DDR_25': 'D-RET',
+            'VOLTE_WIFI_CDR_25': 'WIFI-RET'
+        }
+
+        # Query for time series data
+        query = """
+            SELECT 
+                USID,
+                METRICNAME,
+                DATE(PERIODSTART) as DATE,
+                AVG(EXTRAFAILURES) as EXTRAFAILURES,
+                MAX(VENDOR) as VENDOR,
+                MAX(CQECLUSTER) as CQECLUSTER,
+                MAX(SUBMKT) as SUBMKT
+            FROM CQI2025_CQX_CONTRIBUTION
+            WHERE USID = %s
+        """
+
+        allowed_metrics = list(metric_mapping.keys())
+        query += f" AND METRICNAME IN ({','.join(['%s'] * len(allowed_metrics))})"
+        params = [usid] + allowed_metrics
+
+        # Add date filters
+        if period_start:
+            query += " AND PERIODSTART >= %s"
+            params.append(f"{period_start} 00:00:00")
+
+        if period_end:
+            query += " AND PERIODEND <= %s"
+            params.append(f"{period_end} 23:59:59")
+
+        # Filter by specific metric if provided
+        if metric_name:
+            reverse_mapping = {v: k for k, v in metric_mapping.items()}
+            actual_metric = reverse_mapping.get(metric_name, metric_name)
+            query += " AND METRICNAME = %s"
+            params.append(actual_metric)
+
+        # Group by date and metric, order by date
+        query += """
+            GROUP BY USID, METRICNAME, DATE(PERIODSTART)
+            ORDER BY DATE(PERIODSTART), METRICNAME
+        """
+
+        # Execute query
+        conn = get_snowflake_connection()
+        cur = conn.cursor()
+
+        logger.info(f"Executing USID detail query for {usid}")
+        cur.execute(query, params)
+
+        # Fetch results
+        columns = [desc[0] for desc in cur.description]
+        data = cur.fetchall()
+
+        logger.info(f"Retrieved {len(data)} data points for USID {usid}")
+
+        cur.close()
+        conn.close()
+
+        # Process results
+        result = []
+        for row in data:
+            record = {}
+            for i, col in enumerate(columns):
+                value = row[i]
+
+                if col == 'EXTRAFAILURES':
+                    record[col] = clean_numeric_value(value)
+                elif col == 'DATE':
+                    # Format date as ISO string
+                    if value:
+                        if hasattr(value, 'isoformat'):
+                            record['PERIODSTART'] = value.isoformat()
+                        else:
+                            record['PERIODSTART'] = str(value)
+                    else:
+                        record['PERIODSTART'] = None
+                else:
+                    record[col] = value
+
+            # Add metric display name
+            if record.get('METRICNAME') in metric_mapping:
+                record['METRIC_DISPLAY'] = metric_mapping[record['METRICNAME']]
+            else:
+                record['METRIC_DISPLAY'] = record.get('METRICNAME', '')
+
+            result.append(record)
+
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Error fetching USID detail data: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({'error': 'Endpoint not found'}), 404
@@ -540,7 +664,7 @@ if __name__ == '__main__':
     print("🚀 Starting CQI Dashboard API Server...")
     print("📊 API will be available at: http://localhost:5000")
     print("✅ Snowflake connection configured")
-    print("🔇 Verbose logging suppressed - only warnings/errors will show")
+    print("📇 Verbose logging suppressed - only warnings/errors will show")
     print("-" * 50)
 
     # Set debug=False for production to reduce logging

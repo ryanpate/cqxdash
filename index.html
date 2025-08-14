@@ -225,6 +225,18 @@
             color: #667eea;
         }
 
+        .usid-link {
+            color: #667eea;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .usid-link:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+
         td strong[title] {
             cursor: help;
             border-bottom: 1px dotted #667eea;
@@ -389,7 +401,8 @@
                 contribution to the total failures in the current filtered dataset.
                 CRITICAL ≥10% | HIGH 5-10% | MEDIUM 1-5% | LOW <1%<br>
                     <strong>Metric Aggregation:</strong> When no metric filter is selected, all metrics are aggregated
-                    per USID and shown as "All" in the table.
+                    per USID and shown as "All" in the table.<br>
+                    <strong>Click USID:</strong> Click on any USID to view detailed metrics over time.
             </div>
 
             <div id="tableContainer" style="display: block;">
@@ -835,7 +848,7 @@
 
                 tr.innerHTML = `
                     <td><strong>#${index + 1}</strong></td>
-                    <td>${row.USID || '-'}</td>
+                    <td><a href="usid_detail.html?usid=${row.USID}" class="usid-link">${row.USID || '-'}</a></td>
                     <td>${metricDisplay}</td>
                     <td>${avgFailuresCell}</td>
                     <td>${totalFailuresCell}</td>
