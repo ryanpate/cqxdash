@@ -429,10 +429,11 @@
             </div>
 
             <div class="info-note">
-                <strong>Ranking Criteria:</strong> Choose between Contribution (IDXCONTR) or Extra Failures for ranking.
-                Default is Contribution.<br>
-                <strong>Contribution Values:</strong> Negative values (red) are worse performance, positive values
-                (green) are better. Shows actual contribution values with full precision.<br>
+                <strong>Ranking Criteria:</strong> Choose between Contribution (IDXCONTR) or Total Failures for
+                ranking.<br>
+                <strong>Contribution Ranking:</strong> Smallest to largest (most negative/worst values first). Negative
+                values (red) are worse performance, positive values (green) are better.<br>
+                <strong>Failures Ranking:</strong> Largest to smallest (highest failure counts first).<br>
                 <strong>Dynamic Severity:</strong> Severity levels are calculated based on each entry's percentage
                 contribution to the total of the selected metric.
                 CRITICAL ≥10% | HIGH 5-10% | MEDIUM 1-5% | LOW <1%<br>
@@ -459,7 +460,6 @@
                                 <th>USID</th>
                                 <th>Metric Name</th>
                                 <th>Contribution</th>
-                                <th>Avg Failures</th>
                                 <th>Total Failures</th>
                                 <th>Vendor</th>
                                 <th>CQE Cluster</th>
@@ -1072,11 +1072,11 @@
             if (sortingCriteria === 'contribution') {
                 headers[3].style.backgroundColor = '#e0e7ff';
                 headers[3].style.fontWeight = '700';
-                indicator.textContent = '(by Contribution)';
+                indicator.textContent = '(by Contribution - Worst First)';
             } else {
                 headers[4].style.backgroundColor = '#e0e7ff';
                 headers[4].style.fontWeight = '700';
-                indicator.textContent = '(by Extra Failures)';
+                indicator.textContent = '(by Total Failures - Highest First)';
             }
 
             // Calculate total for dynamic severity based on selected criteria
@@ -1092,18 +1092,18 @@
                 }
             }, 0);
 
-            // Sort by selected criteria (contribution or failures)
+            // Sort by selected criteria (contribution smallest to largest, failures largest to smallest)
             const sortedData = data.sort((a, b) => {
                 if (sortingCriteria === 'contribution') {
                     const contribA = Number(a.IDXCONTR) || Number(a.AVG_IDXCONTR) || 0;
                     const contribB = Number(b.IDXCONTR) || Number(b.AVG_IDXCONTR) || 0;
-                    return contribB - contribA;
+                    return contribA - contribB; // Ascending: smallest (most negative) first
                 } else {
                     const avgFailuresA = Math.max(0, Number(a.AVG_EXTRAFAILURES || a.EXTRAFAILURES) || 0);
                     const avgFailuresB = Math.max(0, Number(b.AVG_EXTRAFAILURES || b.EXTRAFAILURES) || 0);
                     const validA = isFinite(avgFailuresA) ? avgFailuresA : 0;
                     const validB = isFinite(avgFailuresB) ? avgFailuresB : 0;
-                    return validB - validA;
+                    return validB - validA; // Descending: largest first
                 }
             }).slice(0, 100); // Show top 100 offenders
 
@@ -1156,8 +1156,7 @@
                 const contribTitle = `Contribution: ${contribution} | Total: ${totalContribution}`;
                 const contribCell = `<strong title="${contribTitle}" style="color: ${contribColor}">${contribDisplay}</strong>`;
 
-                // Create cells with compact numbers and tooltips
-                const avgFailuresCell = `<strong title="Average: ${formatFullNumber(validAvg)} failures">${formatCompactNumber(validAvg)}</strong>`;
+                // Create cell for total failures with compact numbers and tooltips
                 const totalFailuresCell = `<strong title="Total: ${formatFullNumber(validTotal)} failures">${formatCompactNumber(validTotal)}</strong>`;
 
                 tr.innerHTML = `
@@ -1165,7 +1164,6 @@
                     <td><a href="usid_detail.html?usid=${row.USID}" class="usid-link">${row.USID || '-'}</a></td>
                     <td>${metricDisplay}</td>
                     <td>${contribCell}</td>
-                    <td>${avgFailuresCell}</td>
                     <td>${totalFailuresCell}</td>
                     <td>${row.VENDOR || '-'}</td>
                     <td>${row.CQECLUSTER || '-'}</td>
@@ -1197,18 +1195,18 @@
             const isShowingAllMetrics = currentData.length > 0 &&
                 (currentData[0].METRIC_DISPLAY === 'All' || currentData[0].METRICNAME === 'ALL');
 
-            // Sort data by selected criteria for export
+            // Sort data by selected criteria for export (contribution smallest to largest, failures largest to smallest)
             const sortedData = currentData.sort((a, b) => {
                 if (sortingCriteria === 'contribution') {
                     const contribA = Number(a.IDXCONTR) || Number(a.AVG_IDXCONTR) || 0;
                     const contribB = Number(b.IDXCONTR) || Number(b.AVG_IDXCONTR) || 0;
-                    return contribB - contribA;
+                    return contribA - contribB; // Ascending: smallest (most negative) first
                 } else {
                     const avgFailuresA = Math.max(0, Number(a.AVG_EXTRAFAILURES || a.EXTRAFAILURES) || 0);
                     const avgFailuresB = Math.max(0, Number(b.AVG_EXTRAFAILURES || b.EXTRAFAILURES) || 0);
                     const validA = isFinite(avgFailuresA) ? avgFailuresA : 0;
                     const validB = isFinite(avgFailuresB) ? avgFailuresB : 0;
-                    return validB - validA;
+                    return validB - validA; // Descending: largest first
                 }
             });
 
@@ -1227,7 +1225,6 @@
                     MetricName: row.METRIC_DISPLAY || row.METRICNAME || '',
                     Contribution: contribution.toFixed(4),
                     TotalContribution: totalContribution.toFixed(4),
-                    AverageFailures: validAvg,
                     TotalFailures: validTotal,
                     RecordCount: row.RECORD_COUNT || 1,
                     Vendor: row.VENDOR || '',
@@ -1236,7 +1233,7 @@
                     EarliestPeriod: row.EARLIEST_PERIOD || '',
                     LatestPeriod: row.LATEST_PERIOD || '',
                     AggregationType: isShowingAllMetrics ? 'All Metrics' : 'Single Metric',
-                    SortedBy: sortingCriteria === 'contribution' ? 'Contribution' : 'Extra Failures'
+                    SortedBy: sortingCriteria === 'contribution' ? 'Contribution (Worst First)' : 'Total Failures (Highest First)'
                 };
             });
 
@@ -1260,7 +1257,7 @@
             a.href = url;
 
             // Name file based on aggregation type and sorting
-            const sortType = sortingCriteria === 'contribution' ? 'contrib' : 'failures';
+            const sortType = sortingCriteria === 'contribution' ? 'contrib_worst_first' : 'failures_highest_first';
             const fileName = isShowingAllMetrics ?
                 `cqi_offenders_all_metrics_${sortType}_${new Date().toISOString().split('T')[0]}.csv` :
                 `cqi_offenders_filtered_${sortType}_${new Date().toISOString().split('T')[0]}.csv`;
