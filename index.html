@@ -341,6 +341,17 @@
         .info-note strong {
             color: #003a8c;
         }
+
+        .fresh-data-indicator {
+            display: inline-block;
+            background: #fef3c7;
+            color: #92400e;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            margin-left: 10px;
+            font-weight: 600;
+        }
     </style>
 </head>
 
@@ -385,7 +396,7 @@
                     <input type="text" id="usid" placeholder="Enter USID">
                 </div>
                 <div class="filter-group">
-                    <label for="sortingCriteria">Ranking Criteria</label>
+                    <label for="sortingCriteria">⭐ Ranking Criteria</label>
                     <select id="sortingCriteria">
                         <option value="contribution" selected>Contribution (IDXCONTR)</option>
                         <option value="failures">Extra Failures</option>
@@ -425,12 +436,14 @@
         <div class="data-section">
             <div class="section-header">
                 <h2>Top Offenders <span id="sortingIndicator" style="font-size: 0.8em; color: #667eea;">(by
-                        Contribution)</span></h2>
+                        Contribution)</span> <span id="freshDataIndicator" class="fresh-data-indicator"
+                        style="display: none;">Fresh Data</span></h2>
             </div>
 
             <div class="info-note">
-                <strong>Ranking Criteria:</strong> Choose between Contribution (IDXCONTR) or Total Failures for
-                ranking.<br>
+                <strong>🔄 Fresh Data on Ranking Change:</strong> When you switch between Contribution (IDXCONTR) and
+                Extra Failures ranking, the dashboard automatically fetches fresh data from Snowflake because these
+                metrics don't directly correlate for top offenders.<br><br>
                 <strong>Contribution Ranking:</strong> Smallest to largest (most negative/worst values first). Negative
                 values (red) are worse performance, positive values (green) are better.<br>
                 <strong>Failures Ranking:</strong> Largest to smallest (highest failure counts first).<br>
@@ -556,11 +569,16 @@
             setDefaultDates();
             checkAPIConnection();
 
-            // Add event listener for sorting criteria change
+            // CRITICAL: Add event listener for sorting criteria change to fetch fresh data
             document.getElementById('sortingCriteria').addEventListener('change', function () {
-                if (currentData.length > 0) {
-                    updateDashboard(currentData);
-                }
+                console.log('📊 Ranking criteria changed to:', this.value);
+                console.log('🔄 Fetching fresh data from Snowflake...');
+                // Show fresh data indicator
+                const indicator = document.getElementById('freshDataIndicator');
+                indicator.style.display = 'inline-block';
+                setTimeout(() => indicator.style.display = 'none', 3000);
+                // Always fetch fresh data when criteria changes - don't use cached data
+                fetchData();
             });
         });
 
@@ -679,16 +697,21 @@
         }
 
         async function fetchData() {
+            // CRITICAL: Include sorting criteria in the API request
+            const sortingCriteria = document.getElementById('sortingCriteria').value;
+
             const filters = {
                 submarket: document.getElementById('submarket').value,
                 cqeCluster: document.getElementById('cqeCluster').value,
                 periodStart: document.getElementById('periodStart').value,
                 periodEnd: document.getElementById('periodEnd').value,
                 metricName: document.getElementById('metricName').value,
-                usid: document.getElementById('usid').value
+                usid: document.getElementById('usid').value,
+                sortingCriteria: sortingCriteria  // Pass sorting criteria to backend
             };
 
             console.log('🔄 Starting fetchData with filters:', filters);
+            console.log('📊 Ranking criteria:', sortingCriteria);
             showLoading();
 
             if (!apiAvailable) {
@@ -724,10 +747,12 @@
 
                         if (Array.isArray(data)) {
                             console.log(`📈 Data is array with ${data.length} records`);
+                            console.log(`🎯 Data is sorted by ${sortingCriteria} at the database level`);
                             if (data.length > 0) {
                                 console.log('🔍 First record keys:', Object.keys(data[0]));
                                 console.log('🔍 Sample USID:', data[0].USID);
                                 console.log('🔍 Sample EXTRAFAILURES:', data[0].EXTRAFAILURES);
+                                console.log('🔍 Sample IDXCONTR:', data[0].IDXCONTR);
                             }
                             currentData = data;
                             updateDashboard(data);
@@ -1092,20 +1117,9 @@
                 }
             }, 0);
 
-            // Sort by selected criteria (contribution smallest to largest, failures largest to smallest)
-            const sortedData = data.sort((a, b) => {
-                if (sortingCriteria === 'contribution') {
-                    const contribA = Number(a.IDXCONTR) || Number(a.AVG_IDXCONTR) || 0;
-                    const contribB = Number(b.IDXCONTR) || Number(b.AVG_IDXCONTR) || 0;
-                    return contribA - contribB; // Ascending: smallest (most negative) first
-                } else {
-                    const avgFailuresA = Math.max(0, Number(a.AVG_EXTRAFAILURES || a.EXTRAFAILURES) || 0);
-                    const avgFailuresB = Math.max(0, Number(b.AVG_EXTRAFAILURES || b.EXTRAFAILURES) || 0);
-                    const validA = isFinite(avgFailuresA) ? avgFailuresA : 0;
-                    const validB = isFinite(avgFailuresB) ? avgFailuresB : 0;
-                    return validB - validA; // Descending: largest first
-                }
-            }).slice(0, 100); // Show top 100 offenders
+            // Note: Data is already sorted from the backend based on ranking criteria
+            // We don't need to sort again here as the API returns properly sorted data
+            const sortedData = data.slice(0, 100); // Show top 100 offenders
 
             sortedData.forEach((row, index) => {
                 const tr = document.createElement('tr');
@@ -1195,20 +1209,8 @@
             const isShowingAllMetrics = currentData.length > 0 &&
                 (currentData[0].METRIC_DISPLAY === 'All' || currentData[0].METRICNAME === 'ALL');
 
-            // Sort data by selected criteria for export (contribution smallest to largest, failures largest to smallest)
-            const sortedData = currentData.sort((a, b) => {
-                if (sortingCriteria === 'contribution') {
-                    const contribA = Number(a.IDXCONTR) || Number(a.AVG_IDXCONTR) || 0;
-                    const contribB = Number(b.IDXCONTR) || Number(b.AVG_IDXCONTR) || 0;
-                    return contribA - contribB; // Ascending: smallest (most negative) first
-                } else {
-                    const avgFailuresA = Math.max(0, Number(a.AVG_EXTRAFAILURES || a.EXTRAFAILURES) || 0);
-                    const avgFailuresB = Math.max(0, Number(b.AVG_EXTRAFAILURES || b.EXTRAFAILURES) || 0);
-                    const validA = isFinite(avgFailuresA) ? avgFailuresA : 0;
-                    const validB = isFinite(avgFailuresB) ? avgFailuresB : 0;
-                    return validB - validA; // Descending: largest first
-                }
-            });
+            // Data is already sorted from backend, no need to sort again
+            const sortedData = currentData;
 
             // Add rank to each row
             const exportData = sortedData.map((row, index) => {

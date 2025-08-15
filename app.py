@@ -2,6 +2,7 @@
 CQI Dashboard Flask API - Fixed version with proper NaN handling
 Connects to Snowflake and serves data to the web dashboard
 Updated to use 2-day default for better performance
+ENHANCED: Added sorting criteria support for fresh data pulls
 """
 
 from flask import Flask, jsonify, request
@@ -77,6 +78,28 @@ def clean_numeric_value(value):
             return 0
         if num_val == int(num_val):
             return int(num_val)
+        return num_val
+    except (ValueError, TypeError):
+        return 0
+
+
+def clean_contribution_value(value):
+    """Clean contribution values (can be negative)"""
+    if value is None or pd.isna(value):
+        return 0
+
+    if isinstance(value, (float, np.floating)):
+        if np.isinf(value) or np.isnan(value):
+            return 0
+        return float(value)
+
+    if isinstance(value, (int, np.integer)):
+        return float(value)
+
+    try:
+        num_val = float(value)
+        if np.isnan(num_val) or np.isinf(num_val):
+            return 0
         return num_val
     except (ValueError, TypeError):
         return 0
@@ -270,7 +293,10 @@ def get_filter_options():
 
 @app.route('/api/data', methods=['GET'])
 def get_cqi_data():
-    """Get CQI data - aggregated by USID only when no metric filter, or by USID+METRICNAME when filtered"""
+    """
+    Get CQI data - aggregated by USID only when no metric filter, or by USID+METRICNAME when filtered
+    ENHANCED: Now supports sorting criteria for fresh data pulls with proper ranking
+    """
     try:
         # Log incoming request
         logger.info(
@@ -283,6 +309,10 @@ def get_cqi_data():
         period_end = request.args.get('periodEnd', '')
         metric_name = request.args.get('metricName', '')
         usid = request.args.get('usid', '')
+
+        # CRITICAL: Get sorting criteria to determine ORDER BY clause
+        sorting_criteria = request.args.get('sortingCriteria', 'contribution')
+        logger.info(f"Sorting criteria: {sorting_criteria}")
 
         # Define metric name mapping
         metric_mapping = {
@@ -383,18 +413,22 @@ def get_cqi_data():
         # Group by clause depends on aggregation mode
         if aggregate_all_metrics:
             # Group by USID only when aggregating all metrics
-            query += """ 
-                GROUP BY USID
-                ORDER BY AVG_IDXCONTR DESC NULLS LAST
-                LIMIT 1000
-            """
+            query += " GROUP BY USID"
         else:
             # Group by USID and METRICNAME when filtering by specific metric
-            query += """ 
-                GROUP BY USID, METRICNAME
-                ORDER BY AVG_IDXCONTR DESC NULLS LAST
-                LIMIT 1000
-            """
+            query += " GROUP BY USID, METRICNAME"
+
+        # CRITICAL: Add ORDER BY based on sorting criteria
+        if sorting_criteria == 'contribution':
+            # For contribution ranking, sort by IDXCONTR ascending (most negative first = worst)
+            query += " ORDER BY AVG_IDXCONTR ASC NULLS LAST"
+            logger.info("Ordering by IDXCONTR (contribution) - worst first")
+        else:
+            # For failures ranking, sort by EXTRAFAILURES descending (highest first)
+            query += " ORDER BY TOTAL_EXTRAFAILURES DESC NULLS LAST"
+            logger.info("Ordering by EXTRAFAILURES (failures) - highest first")
+
+        query += " LIMIT 1000"
 
         # Execute query
         conn = get_snowflake_connection()
@@ -402,6 +436,7 @@ def get_cqi_data():
 
         logger.info(
             f"Executing {'USID-only' if aggregate_all_metrics else 'USID+Metric'} aggregated query with {len(params)} parameters")
+        logger.info(f"Query will return top offenders by {sorting_criteria}")
 
         if params:
             cur.execute(query, params)
@@ -412,7 +447,8 @@ def get_cqi_data():
         columns = [desc[0] for desc in cur.description]
         data = cur.fetchall()
 
-        logger.info(f"Query returned {len(data)} aggregated rows")
+        logger.info(
+            f"Query returned {len(data)} aggregated rows sorted by {sorting_criteria}")
 
         cur.close()
         conn.close()
@@ -430,7 +466,7 @@ def get_cqi_data():
                     record[col] = clean_numeric_value(value)
                 elif col in ['AVG_IDXCONTR', 'TOTAL_IDXCONTR']:
                     # Clean contribution values - can be negative (keep as is for contribution)
-                    record[col] = float(value) if value is not None else 0
+                    record[col] = clean_contribution_value(value)
                 elif col in ['AVG_ACTUAL', 'AVG_TARGET']:
                     # Clean numeric averages
                     record[col] = clean_numeric_value(value)
@@ -687,8 +723,9 @@ if __name__ == '__main__':
     print("🚀 Starting CQI Dashboard API Server...")
     print("📊 API will be available at: http://localhost:5000")
     print("✅ Snowflake connection configured")
-    print("🔇 Verbose logging suppressed - only warnings/errors will show")
+    print("📇 Verbose logging suppressed - only warnings/errors will show")
     print("⚡ Default date range: Last 2 days (for optimal performance)")
+    print("🔄 ENHANCED: Fresh data pulls when ranking criteria changes")
     print("-" * 50)
 
     # Set debug=False for production to reduce logging
