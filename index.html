@@ -431,6 +431,8 @@
             <div class="info-note">
                 <strong>Ranking Criteria:</strong> Choose between Contribution (IDXCONTR) or Extra Failures for ranking.
                 Default is Contribution.<br>
+                <strong>Contribution Values:</strong> Negative values (red) are worse performance, positive values
+                (green) are better. Shows actual contribution values with full precision.<br>
                 <strong>Dynamic Severity:</strong> Severity levels are calculated based on each entry's percentage
                 contribution to the total of the selected metric.
                 CRITICAL ≥10% | HIGH 5-10% | MEDIUM 1-5% | LOW <1%<br>
@@ -502,27 +504,36 @@
             }
         }
 
-        // Format contribution values (can be negative)
+        // Format contribution values (can be negative, show full precision for small numbers)
         function formatContribution(num) {
             if (num === null || num === undefined || num === '' || isNaN(num)) return '0';
 
             num = Number(num);
             if (!isFinite(num)) return '0';
 
-            const absNum = Math.abs(num);
-            let formatted;
-
-            if (absNum >= 1000000) {
-                formatted = (absNum / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
-            } else if (absNum >= 1000) {
-                formatted = (absNum / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
-            } else if (absNum >= 1) {
-                formatted = absNum.toFixed(0);
-            } else {
-                formatted = absNum.toFixed(2);
+            // For very small numbers (less than 1), show more decimal places
+            if (Math.abs(num) < 1 && Math.abs(num) > 0) {
+                return num.toFixed(4);
             }
+            // For numbers less than 1000, show 2 decimal places
+            else if (Math.abs(num) < 1000) {
+                return num.toFixed(2);
+            }
+            // For larger numbers, use compact format
+            else {
+                const absNum = Math.abs(num);
+                let formatted;
 
-            return num >= 0 ? `+${formatted}` : `-${formatted}`;
+                if (absNum >= 1000000) {
+                    formatted = (absNum / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+                } else if (absNum >= 1000) {
+                    formatted = (absNum / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+                } else {
+                    formatted = absNum.toFixed(2);
+                }
+
+                return num >= 0 ? `+${formatted}` : `-${formatted}`;
+            }
         }
 
         // Utility function to get full number with commas for tooltips
@@ -792,8 +803,10 @@
                     const recordCount = Math.floor(Math.random() * 100) + 20;
                     const totalFailures = avgFailures * recordCount;
 
-                    // Generate contribution value (can be positive or negative)
-                    const avgContribution = (Math.random() - 0.3) * 1000; // More likely to be positive
+                    // Generate contribution value (can be positive or negative, small values)
+                    // Make it more realistic - mix of small positive/negative values
+                    const baseContrib = (Math.random() - 0.6) * 0.1; // Bias toward negative (worse)
+                    const avgContribution = parseFloat(baseContrib.toFixed(4));
                     const totalContribution = avgContribution * recordCount;
 
                     sampleData.push({
@@ -804,7 +817,7 @@
                         TOTAL_EXTRAFAILURES: totalFailures,
                         AVG_IDXCONTR: avgContribution,
                         TOTAL_IDXCONTR: totalContribution,
-                        IDXCONTR: avgContribution, // For compatibility
+                        IDXCONTR: avgContribution, // Use this for display
                         RECORD_COUNT: recordCount,
                         EXTRAFAILURES: avgFailures, // For compatibility
                         VENDOR: vendors[Math.floor(Math.random() * vendors.length)],
@@ -848,8 +861,9 @@
                     const recordCount = Math.floor(Math.random() * 29) + 1;
                     const totalFailures = avgFailures * recordCount;
 
-                    // Generate contribution value (can be positive or negative)
-                    const avgContribution = (Math.random() - 0.3) * 1000; // More likely to be positive
+                    // Generate contribution value (can be positive or negative, small values)
+                    const baseContrib = (Math.random() - 0.6) * 0.1; // Bias toward negative
+                    const avgContribution = parseFloat(baseContrib.toFixed(4));
                     const totalContribution = avgContribution * recordCount;
 
                     sampleData.push({
@@ -860,7 +874,7 @@
                         TOTAL_EXTRAFAILURES: totalFailures,
                         AVG_IDXCONTR: avgContribution,
                         TOTAL_IDXCONTR: totalContribution,
-                        IDXCONTR: avgContribution, // For compatibility
+                        IDXCONTR: avgContribution, // Use this for display
                         RECORD_COUNT: recordCount,
                         EXTRAFAILURES: avgFailures, // For compatibility
                         VENDOR: vendors[Math.floor(Math.random() * vendors.length)],
@@ -934,7 +948,7 @@
                 // Count total offenders based on selected criteria
                 const offenders = data.filter(row => {
                     if (sortingCriteria === 'contribution') {
-                        const contrib = Number(row.AVG_IDXCONTR || row.IDXCONTR) || 0;
+                        const contrib = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
                         return contrib !== 0;
                     } else {
                         const avgFailures = Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0);
@@ -950,28 +964,30 @@
                     let critical = 0;
 
                     if (sortingCriteria === 'contribution') {
-                        // Calculate total contribution
+                        // Calculate total contribution using raw IDXCONTR values
                         totalValue = data.reduce((sum, row) => {
+                            const contrib = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
                             const total = row.TOTAL_IDXCONTR ?
                                 Number(row.TOTAL_IDXCONTR) :
-                                (Number(row.AVG_IDXCONTR || row.IDXCONTR) || 0) * (row.RECORD_COUNT || 1);
+                                contrib * (row.RECORD_COUNT || 1);
                             return sum + total;
                         }, 0);
 
                         // Count critical based on contribution percentage
                         critical = data.filter(row => {
+                            const contrib = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
                             const rowTotal = row.TOTAL_IDXCONTR ?
                                 Number(row.TOTAL_IDXCONTR) :
-                                (Number(row.AVG_IDXCONTR || row.IDXCONTR) || 0) * (row.RECORD_COUNT || 1);
+                                contrib * (row.RECORD_COUNT || 1);
                             const percentageOfTotal = totalValue !== 0 ?
                                 Math.abs(rowTotal / totalValue) * 100 : 0;
                             return percentageOfTotal >= 10;
                         }).length;
 
-                        // Format contribution (can be negative)
+                        // Format contribution (can be negative, show full precision)
                         const displayValue = formatContribution(totalValue);
                         document.getElementById('totalMetric').textContent = displayValue;
-                        document.getElementById('totalMetric').title = `Total: ${totalValue.toFixed(2)}`;
+                        document.getElementById('totalMetric').title = `Total: ${totalValue.toFixed(4)}`;
                     } else {
                         // Calculate total failures (original logic)
                         totalValue = data.reduce((sum, row) => {
@@ -1066,7 +1082,7 @@
             // Calculate total for dynamic severity based on selected criteria
             const datasetTotal = data.reduce((sum, row) => {
                 if (sortingCriteria === 'contribution') {
-                    const contrib = Number(row.TOTAL_IDXCONTR || row.AVG_IDXCONTR || row.IDXCONTR) || 0;
+                    const contrib = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
                     return sum + contrib;
                 } else {
                     const total = row.TOTAL_EXTRAFAILURES ?
@@ -1079,8 +1095,8 @@
             // Sort by selected criteria (contribution or failures)
             const sortedData = data.sort((a, b) => {
                 if (sortingCriteria === 'contribution') {
-                    const contribA = Number(a.AVG_IDXCONTR || a.IDXCONTR) || 0;
-                    const contribB = Number(b.AVG_IDXCONTR || b.IDXCONTR) || 0;
+                    const contribA = Number(a.IDXCONTR) || Number(a.AVG_IDXCONTR) || 0;
+                    const contribB = Number(b.IDXCONTR) || Number(b.AVG_IDXCONTR) || 0;
                     return contribB - contribA;
                 } else {
                     const avgFailuresA = Math.max(0, Number(a.AVG_EXTRAFAILURES || a.EXTRAFAILURES) || 0);
@@ -1094,9 +1110,9 @@
             sortedData.forEach((row, index) => {
                 const tr = document.createElement('tr');
 
-                // Get contribution values
-                const avgContribution = Number(row.AVG_IDXCONTR || row.IDXCONTR) || 0;
-                const totalContribution = Number(row.TOTAL_IDXCONTR) || (avgContribution * (row.RECORD_COUNT || 1));
+                // Get contribution values - use direct IDXCONTR value, not averages
+                const contribution = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
+                const totalContribution = Number(row.TOTAL_IDXCONTR) || contribution;
 
                 // Get failure values (set negative to 0)
                 const avgFailures = Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0);
@@ -1134,10 +1150,10 @@
                 // Use display name if available
                 const metricDisplay = row.METRIC_DISPLAY || row.METRICNAME || '-';
 
-                // Format contribution with sign and color
-                const contribColor = avgContribution >= 0 ? '#22c55e' : '#ef4444';
-                const contribDisplay = formatContribution(avgContribution);
-                const contribTitle = `Average: ${avgContribution.toFixed(2)} | Total: ${totalContribution.toFixed(2)}`;
+                // Format contribution with proper color: negative = red (worse), positive = green (better)
+                const contribColor = contribution < 0 ? '#ef4444' : '#22c55e';
+                const contribDisplay = formatContribution(contribution);
+                const contribTitle = `Contribution: ${contribution} | Total: ${totalContribution}`;
                 const contribCell = `<strong title="${contribTitle}" style="color: ${contribColor}">${contribDisplay}</strong>`;
 
                 // Create cells with compact numbers and tooltips
@@ -1184,8 +1200,8 @@
             // Sort data by selected criteria for export
             const sortedData = currentData.sort((a, b) => {
                 if (sortingCriteria === 'contribution') {
-                    const contribA = Number(a.AVG_IDXCONTR || a.IDXCONTR) || 0;
-                    const contribB = Number(b.AVG_IDXCONTR || b.IDXCONTR) || 0;
+                    const contribA = Number(a.IDXCONTR) || Number(a.AVG_IDXCONTR) || 0;
+                    const contribB = Number(b.IDXCONTR) || Number(b.AVG_IDXCONTR) || 0;
                     return contribB - contribA;
                 } else {
                     const avgFailuresA = Math.max(0, Number(a.AVG_EXTRAFAILURES || a.EXTRAFAILURES) || 0);
@@ -1198,8 +1214,8 @@
 
             // Add rank to each row
             const exportData = sortedData.map((row, index) => {
-                const avgContribution = Number(row.AVG_IDXCONTR || row.IDXCONTR) || 0;
-                const totalContribution = Number(row.TOTAL_IDXCONTR) || (avgContribution * (row.RECORD_COUNT || 1));
+                const contribution = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
+                const totalContribution = Number(row.TOTAL_IDXCONTR) || contribution;
                 const avgFailures = Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0);
                 const totalFailures = Math.max(0, Number(row.TOTAL_EXTRAFAILURES) || (avgFailures * (row.RECORD_COUNT || 1)));
                 const validAvg = isFinite(avgFailures) ? Math.round(avgFailures) : 0;
@@ -1209,8 +1225,8 @@
                     Rank: index + 1,
                     USID: row.USID || '',
                     MetricName: row.METRIC_DISPLAY || row.METRICNAME || '',
-                    AverageContribution: avgContribution.toFixed(2),
-                    TotalContribution: totalContribution.toFixed(2),
+                    Contribution: contribution.toFixed(4),
+                    TotalContribution: totalContribution.toFixed(4),
                     AverageFailures: validAvg,
                     TotalFailures: validTotal,
                     RecordCount: row.RECORD_COUNT || 1,
