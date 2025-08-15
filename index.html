@@ -320,6 +320,14 @@
             margin: 20px 0;
         }
 
+        .success-message {
+            background: #c6f6d5;
+            color: #276749;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
         .info-note {
             background: #e6f7ff;
             border-left: 4px solid #1890ff;
@@ -431,7 +439,9 @@
                     <strong>Click USID:</strong> Click on any USID to view detailed metrics over time (Extra Failures
                     only).<br>
                     <strong>Data Processing:</strong> Negative failure values are treated as 0. Contribution values can
-                    be positive or negative.
+                    be positive or negative.<br>
+                    <strong>🐛 Debugging:</strong> If the dashboard is stuck loading, press F12 and check the Console
+                    tab for error messages.
             </div>
 
             <div id="tableContainer" style="display: block;">
@@ -531,6 +541,7 @@
 
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', function () {
+            console.log('🚀 Dashboard initializing...');
             setDefaultDates();
             checkAPIConnection();
 
@@ -544,27 +555,42 @@
 
         async function checkAPIConnection() {
             try {
-                const response = await fetch(`${API_URL}/health`);
+                console.log('🔌 Checking API connection...');
+                const response = await fetch(`${API_URL}/health`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                console.log('🔌 Health check response status:', response.status);
+
                 if (response.ok) {
+                    const data = await response.json();
+                    console.log('✅ API health check successful:', data);
                     apiAvailable = true;
-                    console.log('✅ Connected to Flask API');
                     showSuccessMessage('Connected to Snowflake API successfully!');
+                    console.log('📋 Loading filter options...');
                     loadFilterOptions();
+                    console.log('📊 Fetching initial data...');
                     fetchData();
                 } else {
+                    console.error('❌ API health check failed with status:', response.status);
                     handleAPIError();
                 }
             } catch (error) {
-                console.error('❌ Flask API not reachable:', error);
+                console.error('❌ API connection error:', error);
                 handleAPIError();
             }
         }
 
         function handleAPIError() {
+            console.log('🔄 Handling API error - switching to sample data');
             apiAvailable = false;
             showErrorMessage('Flask API is not running. Using sample data. <br>To connect to Snowflake: <br>1. Run: python app.py <br>2. Refresh this page');
             useSampleData();
             setTimeout(() => {
+                console.log('📊 Loading sample data after API error...');
                 fetchData();
             }, 1000);
         }
@@ -587,34 +613,42 @@
 
         function setDefaultDates() {
             const today = new Date();
-            const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+            const twoDaysAgo = new Date(today.getTime() - 2 * 24 * 60 * 60 * 1000);
 
             document.getElementById('periodEnd').value = today.toISOString().split('T')[0];
-            document.getElementById('periodStart').value = lastWeek.toISOString().split('T')[0];
+            document.getElementById('periodStart').value = twoDaysAgo.toISOString().split('T')[0];
         }
 
         async function loadFilterOptions() {
             try {
+                console.log('📋 Loading filter options...');
                 // Fetch filter options from API
                 const response = await fetch(`${API_URL}/filters`);
 
+                console.log('📋 Filters response status:', response.status);
+
                 if (response.ok) {
                     const data = await response.json();
+                    console.log('📋 Filters data received:', data);
 
                     // Store metric mapping if available
                     if (data.metricMapping) {
                         metricMapping = data.metricMapping;
+                        console.log('🔧 Metric mapping stored:', Object.keys(metricMapping).length, 'metrics');
                     }
 
+                    console.log('📋 Populating filter dropdowns...');
                     populateSelect('submarket', data.submarkets);
                     populateSelect('cqeCluster', data.cqeClusters);
                     populateSelect('metricName', data.metricNames);
+                    console.log('✅ Filter options loaded successfully');
                 } else {
+                    console.error('❌ Filter options API error:', response.status);
                     // Use sample data if API is not available
                     useSampleData();
                 }
             } catch (error) {
-                console.error('Error loading filters:', error);
+                console.error('❌ Error loading filters:', error);
                 useSampleData();
             }
         }
@@ -643,29 +677,80 @@
                 usid: document.getElementById('usid').value
             };
 
+            console.log('🔄 Starting fetchData with filters:', filters);
             showLoading();
 
             if (!apiAvailable) {
-                // Use sample data if API is not available
+                console.log('⚠️ API not available, using sample data');
                 generateSampleData();
                 return;
             }
 
             try {
                 const queryParams = new URLSearchParams(filters).toString();
-                const response = await fetch(`${API_URL}/data?${queryParams}`);
+                const url = `${API_URL}/data?${queryParams}`;
+                console.log('📡 Fetching data from:', url);
+
+                const startTime = performance.now();
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const endTime = performance.now();
+
+                console.log(`⏱️ API response received in ${(endTime - startTime) / 1000}s with status:`, response.status);
 
                 if (response.ok) {
-                    const data = await response.json();
-                    currentData = data;
-                    updateDashboard(data);
+                    console.log('✅ Response OK, parsing JSON...');
+                    const responseText = await response.text();
+                    console.log(`📊 Response size: ${responseText.length} characters`);
+
+                    try {
+                        const data = JSON.parse(responseText);
+                        console.log(`✅ JSON parsed successfully. Type: ${typeof data}, Length: ${Array.isArray(data) ? data.length : 'N/A'}`);
+
+                        if (Array.isArray(data)) {
+                            console.log(`📈 Data is array with ${data.length} records`);
+                            if (data.length > 0) {
+                                console.log('🔍 First record keys:', Object.keys(data[0]));
+                                console.log('🔍 Sample USID:', data[0].USID);
+                                console.log('🔍 Sample EXTRAFAILURES:', data[0].EXTRAFAILURES);
+                            }
+                            currentData = data;
+                            updateDashboard(data);
+                        } else if (data.error) {
+                            console.error('❌ API returned error:', data.error);
+                            showErrorMessage(`API Error: ${data.error}`);
+                            generateSampleData();
+                        } else {
+                            console.error('❌ Unexpected data format:', typeof data);
+                            showErrorMessage('Unexpected data format received from API');
+                            generateSampleData();
+                        }
+                    } catch (jsonError) {
+                        console.error('❌ JSON parsing failed:', jsonError);
+                        console.error('Raw response (first 500 chars):', responseText.substring(0, 500));
+                        showErrorMessage(`Invalid JSON response: ${jsonError.message}`);
+                        generateSampleData();
+                    }
                 } else {
-                    // Use sample data if API returns an error
-                    console.error('API returned error:', response.status);
+                    console.error('❌ API returned error status:', response.status);
+                    const errorText = await response.text();
+                    console.error('Error response:', errorText);
+                    showErrorMessage(`API Error: ${response.status} - ${errorText}`);
                     generateSampleData();
                 }
             } catch (error) {
-                console.error('Error fetching data:', error);
+                console.error('❌ Fetch error:', error);
+                if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                    showErrorMessage('Cannot connect to API - make sure Flask server is running');
+                } else if (error.name === 'AbortError' || error.message.includes('timeout')) {
+                    showErrorMessage('Request timeout - try a smaller date range');
+                } else {
+                    showErrorMessage(`Network error: ${error.message}`);
+                }
                 generateSampleData();
             }
         }
@@ -801,113 +886,154 @@
         }
 
         function updateDashboard(data) {
-            hideLoading();
+            console.log('🔄 Updating dashboard with data:', data);
 
-            // Update statistics
-            updateStats(data);
+            try {
+                if (!Array.isArray(data)) {
+                    console.error('❌ Data is not an array:', typeof data);
+                    showErrorMessage('Invalid data format received');
+                    return;
+                }
 
-            // Update table
-            updateTable(data);
+                console.log(`📊 Processing ${data.length} records`);
+                hideLoading();
+
+                // Update statistics
+                console.log('📈 Updating stats...');
+                updateStats(data);
+
+                // Update table
+                console.log('📋 Updating table...');
+                updateTable(data);
+
+                console.log('✅ Dashboard update complete');
+            } catch (error) {
+                console.error('❌ Error updating dashboard:', error);
+                showErrorMessage(`Error updating dashboard: ${error.message}`);
+                hideLoading();
+            }
         }
 
         function updateStats(data) {
-            // Get the selected sorting criteria
-            const sortingCriteria = document.getElementById('sortingCriteria').value;
+            try {
+                console.log('📈 Updating statistics...');
 
-            // Update the label based on selection
-            if (sortingCriteria === 'contribution') {
-                document.getElementById('totalMetricLabel').textContent = 'Total Contribution';
-            } else {
-                document.getElementById('totalMetricLabel').textContent = 'Total Extra Failures';
-            }
+                // Get the selected sorting criteria
+                const sortingCriteria = document.getElementById('sortingCriteria').value;
 
-            // Check if we're showing "All" metrics or specific metrics
-            const isShowingAllMetrics = data.length > 0 && (data[0].METRIC_DISPLAY === 'All' || data[0].METRICNAME === 'ALL');
-
-            // Count total offenders based on selected criteria
-            const offenders = data.filter(row => {
+                // Update the label based on selection
                 if (sortingCriteria === 'contribution') {
-                    const contrib = Number(row.AVG_IDXCONTR || row.IDXCONTR) || 0;
-                    return contrib !== 0;
+                    document.getElementById('totalMetricLabel').textContent = 'Total Contribution';
                 } else {
-                    const avgFailures = Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0);
-                    return isFinite(avgFailures) && avgFailures > 0;
-                }
-            });
-            document.getElementById('totalOffenders').textContent = offenders.length;
-
-            if (data.length > 0) {
-                let totalValue = 0;
-                let critical = 0;
-
-                if (sortingCriteria === 'contribution') {
-                    // Calculate total contribution
-                    totalValue = data.reduce((sum, row) => {
-                        const total = row.TOTAL_IDXCONTR ?
-                            Number(row.TOTAL_IDXCONTR) :
-                            (Number(row.AVG_IDXCONTR || row.IDXCONTR) || 0) * (row.RECORD_COUNT || 1);
-                        return sum + total;
-                    }, 0);
-
-                    // Count critical based on contribution percentage
-                    critical = data.filter(row => {
-                        const rowTotal = row.TOTAL_IDXCONTR ?
-                            Number(row.TOTAL_IDXCONTR) :
-                            (Number(row.AVG_IDXCONTR || row.IDXCONTR) || 0) * (row.RECORD_COUNT || 1);
-                        const percentageOfTotal = totalValue !== 0 ?
-                            Math.abs(rowTotal / totalValue) * 100 : 0;
-                        return percentageOfTotal >= 10;
-                    }).length;
-
-                    // Format contribution (can be negative)
-                    const displayValue = formatContribution(totalValue);
-                    document.getElementById('totalMetric').textContent = displayValue;
-                    document.getElementById('totalMetric').title = `Total: ${totalValue.toFixed(2)}`;
-                } else {
-                    // Calculate total failures (original logic)
-                    totalValue = data.reduce((sum, row) => {
-                        const total = row.TOTAL_EXTRAFAILURES ?
-                            Math.max(0, Number(row.TOTAL_EXTRAFAILURES)) :
-                            Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0) * (row.RECORD_COUNT || 1);
-                        return sum + (isFinite(total) ? total : 0);
-                    }, 0);
-
-                    // Count critical based on failure percentage
-                    critical = data.filter(row => {
-                        const rowTotal = row.TOTAL_EXTRAFAILURES ?
-                            Math.max(0, Number(row.TOTAL_EXTRAFAILURES)) :
-                            Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0) * (row.RECORD_COUNT || 1);
-                        const validTotal = isFinite(rowTotal) ? rowTotal : 0;
-                        const percentageOfTotal = totalValue > 0 ? (validTotal / totalValue) * 100 : 0;
-                        return percentageOfTotal >= 10;
-                    }).length;
-
-                    document.getElementById('totalMetric').textContent = formatCompactNumber(totalValue);
-                    document.getElementById('totalMetric').title = `Total: ${formatFullNumber(totalValue)}`;
+                    document.getElementById('totalMetricLabel').textContent = 'Total Extra Failures';
                 }
 
-                document.getElementById('criticalOffenders').textContent = critical;
+                // Check if we're showing "All" metrics or specific metrics
+                const isShowingAllMetrics = data.length > 0 && (data[0].METRIC_DISPLAY === 'All' || data[0].METRICNAME === 'ALL');
 
-                // Count unique USIDs
-                const uniqueUsids = new Set(data.map(row => row.USID)).size;
-                document.getElementById('activeUsids').textContent = uniqueUsids;
+                // Count total offenders based on selected criteria
+                const offenders = data.filter(row => {
+                    if (sortingCriteria === 'contribution') {
+                        const contrib = Number(row.AVG_IDXCONTR || row.IDXCONTR) || 0;
+                        return contrib !== 0;
+                    } else {
+                        const avgFailures = Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0);
+                        return isFinite(avgFailures) && avgFailures > 0;
+                    }
+                });
 
-                // Update change indicators
-                if (isShowingAllMetrics) {
-                    document.getElementById('offenderChange').textContent = `${offenders.length} USIDs (all metrics)`;
+                console.log(`📊 Found ${offenders.length} offenders out of ${data.length} records`);
+                document.getElementById('totalOffenders').textContent = offenders.length;
+
+                if (data.length > 0) {
+                    let totalValue = 0;
+                    let critical = 0;
+
+                    if (sortingCriteria === 'contribution') {
+                        // Calculate total contribution
+                        totalValue = data.reduce((sum, row) => {
+                            const total = row.TOTAL_IDXCONTR ?
+                                Number(row.TOTAL_IDXCONTR) :
+                                (Number(row.AVG_IDXCONTR || row.IDXCONTR) || 0) * (row.RECORD_COUNT || 1);
+                            return sum + total;
+                        }, 0);
+
+                        // Count critical based on contribution percentage
+                        critical = data.filter(row => {
+                            const rowTotal = row.TOTAL_IDXCONTR ?
+                                Number(row.TOTAL_IDXCONTR) :
+                                (Number(row.AVG_IDXCONTR || row.IDXCONTR) || 0) * (row.RECORD_COUNT || 1);
+                            const percentageOfTotal = totalValue !== 0 ?
+                                Math.abs(rowTotal / totalValue) * 100 : 0;
+                            return percentageOfTotal >= 10;
+                        }).length;
+
+                        // Format contribution (can be negative)
+                        const displayValue = formatContribution(totalValue);
+                        document.getElementById('totalMetric').textContent = displayValue;
+                        document.getElementById('totalMetric').title = `Total: ${totalValue.toFixed(2)}`;
+                    } else {
+                        // Calculate total failures (original logic)
+                        totalValue = data.reduce((sum, row) => {
+                            const total = row.TOTAL_EXTRAFAILURES ?
+                                Math.max(0, Number(row.TOTAL_EXTRAFAILURES)) :
+                                Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0) * (row.RECORD_COUNT || 1);
+                            return sum + (isFinite(total) ? total : 0);
+                        }, 0);
+
+                        // Count critical based on failure percentage
+                        critical = data.filter(row => {
+                            const rowTotal = row.TOTAL_EXTRAFAILURES ?
+                                Math.max(0, Number(row.TOTAL_EXTRAFAILURES)) :
+                                Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0) * (row.RECORD_COUNT || 1);
+                            const validTotal = isFinite(rowTotal) ? rowTotal : 0;
+                            const percentageOfTotal = totalValue > 0 ? (validTotal / totalValue) * 100 : 0;
+                            return percentageOfTotal >= 10;
+                        }).length;
+
+                        document.getElementById('totalMetric').textContent = formatCompactNumber(totalValue);
+                        document.getElementById('totalMetric').title = `Total: ${formatFullNumber(totalValue)}`;
+                    }
+
+                    document.getElementById('criticalOffenders').textContent = critical;
+
+                    // Count unique USIDs
+                    const uniqueUsids = new Set(data.map(row => row.USID)).size;
+                    document.getElementById('activeUsids').textContent = uniqueUsids;
+
+                    // Update change indicators
+                    if (isShowingAllMetrics) {
+                        document.getElementById('offenderChange').textContent = `${offenders.length} USIDs (all metrics)`;
+                    } else {
+                        document.getElementById('offenderChange').textContent = `${offenders.length} USID+Metric pairs`;
+                    }
+
+                    const avgPerEntry = totalValue / data.length;
+                    const metricType = sortingCriteria === 'contribution' ? 'contribution' : 'failures';
+                    if (sortingCriteria === 'contribution') {
+                        document.getElementById('metricChange').textContent = `Avg: ${formatContribution(avgPerEntry)} per entry`;
+                    } else {
+                        document.getElementById('metricChange').textContent = `Avg: ${formatCompactNumber(avgPerEntry)} per entry`;
+                    }
+                    document.getElementById('criticalChange').textContent = `≥10% of total ${metricType}`;
+                    document.getElementById('usidChange').textContent = `${uniqueUsids} unique sites`;
+
+                    console.log('✅ Statistics updated successfully');
                 } else {
-                    document.getElementById('offenderChange').textContent = `${offenders.length} USID+Metric pairs`;
+                    console.log('⚠️ No data to update statistics');
+                    // Set default values for empty data
+                    document.getElementById('totalOffenders').textContent = '0';
+                    document.getElementById('totalMetric').textContent = '0';
+                    document.getElementById('criticalOffenders').textContent = '0';
+                    document.getElementById('activeUsids').textContent = '0';
                 }
-
-                const avgPerEntry = totalValue / data.length;
-                const metricType = sortingCriteria === 'contribution' ? 'contribution' : 'failures';
-                if (sortingCriteria === 'contribution') {
-                    document.getElementById('metricChange').textContent = `Avg: ${formatContribution(avgPerEntry)} per entry`;
-                } else {
-                    document.getElementById('metricChange').textContent = `Avg: ${formatCompactNumber(avgPerEntry)} per entry`;
-                }
-                document.getElementById('criticalChange').textContent = `≥10% of total ${metricType}`;
-                document.getElementById('usidChange').textContent = `${uniqueUsids} unique sites`;
+            } catch (error) {
+                console.error('❌ Error updating statistics:', error);
+                // Set default values on error
+                document.getElementById('totalOffenders').textContent = 'Error';
+                document.getElementById('totalMetric').textContent = 'Error';
+                document.getElementById('criticalOffenders').textContent = 'Error';
+                document.getElementById('activeUsids').textContent = 'Error';
             }
         }
 
