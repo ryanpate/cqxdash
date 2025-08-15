@@ -1,6 +1,7 @@
 """
 CQI Dashboard Flask API - Fixed version with proper NaN handling
 Connects to Snowflake and serves data to the web dashboard
+Updated to use 2-day default for better performance
 """
 
 from flask import Flask, jsonify, request
@@ -128,11 +129,11 @@ def test_connection():
             cur.execute("SELECT COUNT(*) FROM CQI2025_CQX_CONTRIBUTION")
             row_count = cur.fetchone()[0]
 
-            # Get recent data count
+            # Get recent data count (last 2 days)
             cur.execute("""
                 SELECT COUNT(*) 
                 FROM CQI2025_CQX_CONTRIBUTION
-                WHERE PERIODSTART >= DATEADD(day, -7, CURRENT_TIMESTAMP())
+                WHERE PERIODSTART >= DATEADD(day, -2, CURRENT_TIMESTAMP())
             """)
             recent_count = cur.fetchone()[0]
 
@@ -188,7 +189,7 @@ def test_connection():
             'schema': context[2],
             'table_exists': table_exists,
             'total_rows': row_count,
-            'recent_rows_7days': recent_count,
+            'recent_rows_2days': recent_count,  # Updated from 7days to 2days
             'sample_data': sample_data
         }
 
@@ -480,9 +481,9 @@ def get_summary_stats():
         conn = get_snowflake_connection()
         cur = conn.cursor()
 
-        # Get date range for last 7 days
+        # Get date range for last 2 days (reduced from 7 for better performance)
         end_date = datetime.now().strftime('%Y-%m-%d 23:59:59')
-        start_date = (datetime.now() - timedelta(days=7)
+        start_date = (datetime.now() - timedelta(days=2)
                       ).strftime('%Y-%m-%d 00:00:00')
 
         # Define allowed metrics
@@ -686,7 +687,8 @@ if __name__ == '__main__':
     print("🚀 Starting CQI Dashboard API Server...")
     print("📊 API will be available at: http://localhost:5000")
     print("✅ Snowflake connection configured")
-    print("📇 Verbose logging suppressed - only warnings/errors will show")
+    print("🔇 Verbose logging suppressed - only warnings/errors will show")
+    print("⚡ Default date range: Last 2 days (for optimal performance)")
     print("-" * 50)
 
     # Set debug=False for production to reduce logging

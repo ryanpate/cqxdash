@@ -36,7 +36,7 @@ def test_api_endpoints():
     try:
         # Use same date range as the frontend would use
         end_date = datetime.now().strftime('%Y-%m-%d')
-        start_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+        start_date = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
         
         # Same parameters as frontend sends
         params = {
