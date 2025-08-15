@@ -147,7 +147,7 @@ def test_connection():
 
             # Get sample data with specific metrics
             cur.execute("""
-                SELECT USID, METRICNAME, EXTRAFAILURES, VENDOR, CQECLUSTER, SUBMKT, PERIODSTART
+                SELECT USID, METRICNAME, EXTRAFAILURES, IDXCONTR, VENDOR, CQECLUSTER, SUBMKT, PERIODSTART
                 FROM CQI2025_CQX_CONTRIBUTION
                 WHERE PERIODSTART IS NOT NULL
                 AND METRICNAME IN (
@@ -156,7 +156,7 @@ def test_connection():
                     'ALLRAT_DACC_25', 'ALLRAT_DL_TPUT_25', 'ALLRAT_UL_TPUT_25',
                     'ALLRAT_DDR_25', 'VOLTE_WIFI_CDR_25'
                 )
-                ORDER BY EXTRAFAILURES DESC NULLS LAST
+                ORDER BY IDXCONTR DESC NULLS LAST
                 LIMIT 5
             """)
             sample_rows = cur.fetchall()
@@ -164,15 +164,18 @@ def test_connection():
             for row in sample_rows:
                 # Clean EXTRAFAILURES value (sets negative to 0)
                 extrafailures = clean_numeric_value(row[2])
+                # Keep IDXCONTR as is (can be negative)
+                idxcontr = float(row[3]) if row[3] is not None else 0
 
                 sample_data.append({
                     'USID': row[0],
                     'METRICNAME': row[1],
                     'EXTRAFAILURES': extrafailures,
-                    'VENDOR': row[3],
-                    'CLUSTER': row[4],
-                    'SUBMKT': row[5],
-                    'PERIODSTART': row[6].strftime('%Y-%m-%d %H:%M:%S') if row[6] else None
+                    'IDXCONTR': idxcontr,
+                    'VENDOR': row[4],
+                    'CLUSTER': row[5],
+                    'SUBMKT': row[6],
+                    'PERIODSTART': row[7].strftime('%Y-%m-%d %H:%M:%S') if row[7] else None
                 })
 
         cur.close()
@@ -307,6 +310,8 @@ def get_cqi_data():
                     'ALL' as METRICNAME,
                     AVG(EXTRAFAILURES) as AVG_EXTRAFAILURES,
                     SUM(EXTRAFAILURES) as TOTAL_EXTRAFAILURES,
+                    AVG(IDXCONTR) as AVG_IDXCONTR,
+                    SUM(IDXCONTR) as TOTAL_IDXCONTR,
                     COUNT(*) as RECORD_COUNT,
                     MAX(VENDOR) as VENDOR,
                     MAX(CQECLUSTER) as CQECLUSTER,
@@ -326,6 +331,8 @@ def get_cqi_data():
                     METRICNAME,
                     AVG(EXTRAFAILURES) as AVG_EXTRAFAILURES,
                     SUM(EXTRAFAILURES) as TOTAL_EXTRAFAILURES,
+                    AVG(IDXCONTR) as AVG_IDXCONTR,
+                    SUM(IDXCONTR) as TOTAL_IDXCONTR,
                     COUNT(*) as RECORD_COUNT,
                     MAX(VENDOR) as VENDOR,
                     MAX(CQECLUSTER) as CQECLUSTER,
@@ -377,14 +384,14 @@ def get_cqi_data():
             # Group by USID only when aggregating all metrics
             query += """ 
                 GROUP BY USID
-                ORDER BY AVG_EXTRAFAILURES DESC NULLS LAST
+                ORDER BY AVG_IDXCONTR DESC NULLS LAST
                 LIMIT 1000
             """
         else:
             # Group by USID and METRICNAME when filtering by specific metric
             query += """ 
                 GROUP BY USID, METRICNAME
-                ORDER BY AVG_EXTRAFAILURES DESC NULLS LAST
+                ORDER BY AVG_IDXCONTR DESC NULLS LAST
                 LIMIT 1000
             """
 
@@ -420,6 +427,9 @@ def get_cqi_data():
                 if col in ['AVG_EXTRAFAILURES', 'TOTAL_EXTRAFAILURES']:
                     # Clean failure values - sets negative to 0
                     record[col] = clean_numeric_value(value)
+                elif col in ['AVG_IDXCONTR', 'TOTAL_IDXCONTR']:
+                    # Clean contribution values - can be negative (keep as is for contribution)
+                    record[col] = float(value) if value is not None else 0
                 elif col in ['AVG_ACTUAL', 'AVG_TARGET']:
                     # Clean numeric averages
                     record[col] = clean_numeric_value(value)
@@ -450,6 +460,7 @@ def get_cqi_data():
 
             # For compatibility, also include EXTRAFAILURES as the average
             record['EXTRAFAILURES'] = record.get('AVG_EXTRAFAILURES', 0)
+            record['IDXCONTR'] = record.get('AVG_IDXCONTR', 0)
 
             result.append(record)
 
