@@ -43,7 +43,10 @@ SNOWFLAKE_CONFIG = {
 
 
 def clean_numeric_value(value):
-    """Clean numeric values, handling NaN, Infinity, and None"""
+    """Clean numeric values, handling NaN, Infinity, None, and negative values
+    
+    Negative values are set to 0 to ensure failure counts are never negative.
+    """
     if value is None:
         return 0
     if pd.isna(value):
@@ -53,16 +56,23 @@ def clean_numeric_value(value):
             return 0
         if np.isnan(value):
             return 0
+        # Set negative values to 0
+        if value < 0:
+            return 0
         # Convert to int if it's a whole number, otherwise keep as float
         if value == int(value):
             return int(value)
         return float(value)
     if isinstance(value, (int, np.integer)):
-        return int(value)
+        # Set negative values to 0
+        return max(0, int(value))
     # Try to convert string to number
     try:
         num_val = float(value)
         if np.isnan(num_val) or np.isinf(num_val):
+            return 0
+        # Set negative values to 0
+        if num_val < 0:
             return 0
         if num_val == int(num_val):
             return int(num_val)
@@ -152,7 +162,7 @@ def test_connection():
             sample_rows = cur.fetchall()
 
             for row in sample_rows:
-                # Clean EXTRAFAILURES value
+                # Clean EXTRAFAILURES value (sets negative to 0)
                 extrafailures = clean_numeric_value(row[2])
 
                 sample_data.append({
@@ -408,7 +418,7 @@ def get_cqi_data():
 
                 # Handle different data types
                 if col in ['AVG_EXTRAFAILURES', 'TOTAL_EXTRAFAILURES']:
-                    # Clean failure values
+                    # Clean failure values - sets negative to 0
                     record[col] = clean_numeric_value(value)
                 elif col in ['AVG_ACTUAL', 'AVG_TARGET']:
                     # Clean numeric averages
@@ -619,6 +629,7 @@ def get_usid_detail():
                 value = row[i]
 
                 if col == 'EXTRAFAILURES':
+                    # Set negative values to 0
                     record[col] = clean_numeric_value(value)
                 elif col == 'DATE':
                     # Format date as ISO string

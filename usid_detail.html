@@ -387,9 +387,12 @@
             return urlParams.get(name);
         }
 
+        // Format number compactly - sets negative to 0
         function formatCompactNumber(num) {
             if (num === null || num === undefined || isNaN(num)) return '0';
             num = Number(num);
+            // Set negative values to 0
+            if (num < 0) return '0';
             if (num >= 1000000) {
                 return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
             } else if (num >= 1000) {
@@ -476,6 +479,7 @@
 
         function updateChart(data) {
             // Group data by date and metric
+            // Negative values are set to 0 for display
             const groupedData = {};
             const allDates = new Set();
             const allMetrics = new Set();
@@ -483,7 +487,8 @@
             data.forEach(record => {
                 const date = record.PERIODSTART ? record.PERIODSTART.split('T')[0] : record.DATE;
                 const metric = record.METRIC_DISPLAY || record.METRICNAME || 'Unknown';
-                const failures = Number(record.EXTRAFAILURES) || 0;
+                // Set negative values to 0
+                const failures = Math.max(0, Number(record.EXTRAFAILURES) || 0);
 
                 if (!groupedData[metric]) {
                     groupedData[metric] = {};
@@ -603,7 +608,8 @@
                                 },
                                 label: function (context) {
                                     const metric = context.dataset.label;
-                                    const value = context.parsed.y;
+                                    // Set negative values to 0 for display
+                                    const value = Math.max(0, context.parsed.y);
                                     const formattedValue = formatCompactNumber(value);
                                     const fullValue = value.toLocaleString();
                                     return `${metric}: ${formattedValue} (${fullValue})`;
@@ -614,20 +620,22 @@
                                     const currentIndex = context.dataIndex;
 
                                     if (currentIndex > 0) {
-                                        const currentValue = dataPoints[currentIndex].y;
-                                        const previousValue = dataPoints[currentIndex - 1].y;
+                                        // Set negative values to 0 for comparison
+                                        const currentValue = Math.max(0, dataPoints[currentIndex].y);
+                                        const previousValue = Math.max(0, dataPoints[currentIndex - 1].y);
                                         const change = currentValue - previousValue;
-                                        const percentChange = ((change / previousValue) * 100).toFixed(1);
+                                        const percentChange = previousValue > 0 ? ((change / previousValue) * 100).toFixed(1) : '0';
                                         const arrow = change > 0 ? '↑' : change < 0 ? '↓' : '→';
                                         const changeColor = change > 0 ? '+' : '';
-                                        return `Change: ${changeColor}${formatCompactNumber(change)} (${changeColor}${percentChange}%) ${arrow}`;
+                                        const absChange = Math.abs(change);
+                                        return `Change: ${changeColor}${formatCompactNumber(absChange)} (${changeColor}${percentChange}%) ${arrow}`;
                                     }
                                     return '';
                                 },
                                 footer: function (tooltipItems) {
                                     if (tooltipItems.length > 1) {
-                                        // Calculate total if multiple metrics shown
-                                        const total = tooltipItems.reduce((sum, item) => sum + item.parsed.y, 0);
+                                        // Calculate total if multiple metrics shown (set negative to 0)
+                                        const total = tooltipItems.reduce((sum, item) => sum + Math.max(0, item.parsed.y), 0);
                                         return `Total: ${formatCompactNumber(total)}`;
                                     }
                                     return '';
@@ -654,6 +662,7 @@
                                 text: 'Extra Failures'
                             },
                             beginAtZero: true,
+                            min: 0,  // Ensure Y-axis starts at 0 since negative values become 0
                             ticks: {
                                 callback: function (value) {
                                     return formatCompactNumber(value);
@@ -680,7 +689,8 @@
                 data.filter(d => (d.METRIC_DISPLAY || d.METRICNAME) === metricFilter) :
                 data;
 
-            const failures = filteredData.map(d => Number(d.EXTRAFAILURES) || 0);
+            // Set negative values to 0 for all failure values
+            const failures = filteredData.map(d => Math.max(0, Number(d.EXTRAFAILURES) || 0));
             const avgFailures = failures.length > 0 ?
                 failures.reduce((a, b) => a + b, 0) / failures.length : 0;
             const peakFailures = failures.length > 0 ? Math.max(...failures) : 0;
@@ -715,7 +725,7 @@
                     const date = new Date();
                     date.setDate(date.getDate() - i);
 
-                    // Generate realistic failure patterns
+                    // Generate realistic failure patterns (no negative values)
                     const baseValue = Math.random() * 50000 + 10000;
                     const variation = Math.sin(i / 3) * 10000;
                     const spike = (i % 7 === 0) ? Math.random() * 30000 : 0;
