@@ -1,8 +1,6 @@
 """
-CQI Dashboard Flask API - Fixed version with proper NaN handling
-Connects to Snowflake and serves data to the web dashboard
-Updated to use 2-day default for better performance
-ENHANCED: Added sorting criteria support for fresh data pulls
+CQI Dashboard Flask API - Secured Version with Environment Variables
+Credentials are now stored in environment variables or .env file
 """
 
 from flask import Flask, jsonify, request
@@ -15,11 +13,15 @@ import os
 from functools import lru_cache
 import logging
 import json
+from dotenv import load_dotenv  # For loading .env file
+
+# Load environment variables from .env file if it exists
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
-# Configure logging - Reduce Snowflake connector verbosity
+# Configure logging
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -28,27 +30,62 @@ logger.setLevel(logging.INFO)
 snowflake_logger = logging.getLogger('snowflake.connector')
 snowflake_logger.setLevel(logging.WARNING)
 
-# Suppress werkzeug INFO logs (Flask HTTP requests)
+# Suppress werkzeug INFO logs
 werkzeug_logger = logging.getLogger('werkzeug')
 werkzeug_logger.setLevel(logging.ERROR)
 
-# Snowflake connection parameters
+# Snowflake connection parameters from environment variables
 SNOWFLAKE_CONFIG = {
-    'account': 'nsasprd.east-us-2.privatelink',
-    'user': 'm69382',
-    'private_key_file': 'private_key.txt',
-    'private_key_file_pwd': 'KsX.fVfg3_y0Ti5ewb0FNiPUc5kfDdJZws0tdgA.',
-    'warehouse': 'USR_REPORTING_WH',
-    'database': 'PRD_MOBILITY',
-    'schema': 'PRD_MOBILITYSCORECARD_VIEWS'
+    'account': os.getenv('SNOWFLAKE_ACCOUNT', 'nsasprd.east-us-2.privatelink'),
+    'user': os.getenv('SNOWFLAKE_USER'),
+    'warehouse': os.getenv('SNOWFLAKE_WAREHOUSE', 'USR_REPORTING_WH'),
+    'database': os.getenv('SNOWFLAKE_DATABASE', 'PRD_MOBILITY'),
+    'schema': os.getenv('SNOWFLAKE_SCHEMA', 'PRD_MOBILITYSCORECARD_VIEWS')
 }
+
+# Handle authentication method
+if os.getenv('SNOWFLAKE_PRIVATE_KEY_PATH'):
+    # Use private key authentication
+    SNOWFLAKE_CONFIG['private_key_file'] = os.getenv(
+        'SNOWFLAKE_PRIVATE_KEY_PATH')
+    if os.getenv('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE'):
+        SNOWFLAKE_CONFIG['private_key_file_pwd'] = os.getenv(
+            'SNOWFLAKE_PRIVATE_KEY_PASSPHRASE')
+elif os.getenv('SNOWFLAKE_PASSWORD'):
+    # Use password authentication
+    SNOWFLAKE_CONFIG['password'] = os.getenv('SNOWFLAKE_PASSWORD')
+else:
+    logger.warning(
+        "No authentication method configured. Set either SNOWFLAKE_PRIVATE_KEY_PATH or SNOWFLAKE_PASSWORD")
+
+
+def validate_config():
+    """Validate that required configuration is present"""
+    required = ['account', 'user', 'warehouse', 'database', 'schema']
+    missing = [key for key in required if not SNOWFLAKE_CONFIG.get(key)]
+
+    if missing:
+        logger.error(
+            f"Missing required Snowflake configuration: {', '.join(missing)}")
+        logger.error("Please set the following environment variables:")
+        for key in missing:
+            logger.error(f"  SNOWFLAKE_{key.upper()}")
+        return False
+
+    # Check for authentication
+    has_auth = (
+        'private_key_file' in SNOWFLAKE_CONFIG or 'password' in SNOWFLAKE_CONFIG)
+    if not has_auth:
+        logger.error("No authentication method configured.")
+        logger.error(
+            "Set either SNOWFLAKE_PRIVATE_KEY_PATH or SNOWFLAKE_PASSWORD")
+        return False
+
+    return True
 
 
 def clean_numeric_value(value):
-    """Clean numeric values, handling NaN, Infinity, None, and negative values
-    
-    Negative values are set to 0 to ensure failure counts are never negative.
-    """
+    """Clean numeric values, handling NaN, Infinity, None, and negative values"""
     if value is None:
         return 0
     if pd.isna(value):
@@ -61,7 +98,7 @@ def clean_numeric_value(value):
         # Set negative values to 0
         if value < 0:
             return 0
-        # Convert to int if it's a whole number, otherwise keep as float
+        # Convert to int if it's a whole number
         if value == int(value):
             return int(value)
         return float(value)
@@ -107,6 +144,10 @@ def clean_contribution_value(value):
 
 def get_snowflake_connection():
     """Create and return a Snowflake connection"""
+    if not validate_config():
+        raise ValueError(
+            "Invalid Snowflake configuration. Check environment variables.")
+
     try:
         conn = sc.connect(**SNOWFLAKE_CONFIG)
         return conn
@@ -118,7 +159,12 @@ def get_snowflake_connection():
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
-    return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()})
+    config_valid = validate_config()
+    return jsonify({
+        'status': 'healthy' if config_valid else 'unhealthy',
+        'config_valid': config_valid,
+        'timestamp': datetime.now().isoformat()
+    })
 
 
 @app.route('/api/test', methods=['GET'])
@@ -128,12 +174,12 @@ def test_connection():
         conn = get_snowflake_connection()
         cur = conn.cursor()
 
-        # Test 1: Basic connection
+        # Test basic connection
         cur.execute(
             "SELECT CURRENT_USER(), CURRENT_DATABASE(), CURRENT_SCHEMA()")
         context = cur.fetchone()
 
-        # Test 2: Check table exists
+        # Check table exists
         cur.execute("""
             SELECT COUNT(*) 
             FROM INFORMATION_SCHEMA.TABLES 
@@ -142,7 +188,7 @@ def test_connection():
         """)
         table_exists = cur.fetchone()[0] > 0
 
-        # Test 3: Count rows
+        # Count rows
         row_count = 0
         recent_count = 0
         sample_data = []
@@ -152,7 +198,7 @@ def test_connection():
             cur.execute("SELECT COUNT(*) FROM CQI2025_CQX_CONTRIBUTION")
             row_count = cur.fetchone()[0]
 
-            # Get recent data count (last 2 days)
+            # Get recent data count
             cur.execute("""
                 SELECT COUNT(*) 
                 FROM CQI2025_CQX_CONTRIBUTION
@@ -160,7 +206,7 @@ def test_connection():
             """)
             recent_count = cur.fetchone()[0]
 
-            # Get date range of data
+            # Get date range
             cur.execute("""
                 SELECT 
                     MIN(PERIODSTART) as earliest,
@@ -169,7 +215,7 @@ def test_connection():
             """)
             date_range = cur.fetchone()
 
-            # Get sample data with specific metrics
+            # Get sample data
             cur.execute("""
                 SELECT USID, METRICNAME, EXTRAFAILURES, IDXCONTR, VENDOR, CQECLUSTER, SUBMKT, PERIODSTART
                 FROM CQI2025_CQX_CONTRIBUTION
@@ -186,9 +232,7 @@ def test_connection():
             sample_rows = cur.fetchall()
 
             for row in sample_rows:
-                # Clean EXTRAFAILURES value (sets negative to 0)
                 extrafailures = clean_numeric_value(row[2])
-                # Keep IDXCONTR as is (can be negative)
                 idxcontr = float(row[3]) if row[3] is not None else 0
 
                 sample_data.append({
@@ -212,7 +256,7 @@ def test_connection():
             'schema': context[2],
             'table_exists': table_exists,
             'total_rows': row_count,
-            'recent_rows_2days': recent_count,  # Updated from 7days to 2days
+            'recent_rows_2days': recent_count,
             'sample_data': sample_data
         }
 
@@ -278,7 +322,6 @@ def get_filter_options():
 
         # Return the display names for metrics
         filters['metricNames'] = list(metric_mapping.values())
-        # Include mapping for reference
         filters['metricMapping'] = metric_mapping
 
         cur.close()
@@ -293,28 +336,20 @@ def get_filter_options():
 
 @app.route('/api/data', methods=['GET'])
 def get_cqi_data():
-    """
-    Get CQI data - aggregated by USID only when no metric filter, or by USID+METRICNAME when filtered
-    ENHANCED: Now supports sorting criteria for fresh data pulls with proper ranking
-    """
+    """Get CQI data - aggregated by USID+METRICNAME"""
     try:
-        # Log incoming request
-        logger.info(
-            f"Data request received with filters: {request.args.to_dict()}")
-
-        # Get filter parameters from query string
+        # Get filter parameters
         submarket = request.args.get('submarket', '')
         cqe_cluster = request.args.get('cqeCluster', '')
         period_start = request.args.get('periodStart', '')
         period_end = request.args.get('periodEnd', '')
         metric_name = request.args.get('metricName', '')
         usid = request.args.get('usid', '')
-
-        # CRITICAL: Get sorting criteria to determine ORDER BY clause
         sorting_criteria = request.args.get('sortingCriteria', 'contribution')
-        logger.info(f"Sorting criteria: {sorting_criteria}")
 
-        # Define metric name mapping
+        logger.info(f"Data request with sorting: {sorting_criteria}")
+
+        # Define metric mapping
         metric_mapping = {
             'VOICE_CDR_RET_25': 'V-CDR',
             'LTE_IQI_NS_ESO_25': 'NS/ESO',
@@ -329,12 +364,11 @@ def get_cqi_data():
             'VOLTE_WIFI_CDR_25': 'WIFI-RET'
         }
 
-        # Determine if we're aggregating by USID only or USID+METRICNAME
-        # If no metric filter, aggregate all metrics per USID
+        # Determine aggregation mode
         aggregate_all_metrics = not metric_name
 
         if aggregate_all_metrics:
-            # Aggregate ALL metrics per USID when no specific metric is filtered
+            # Aggregate ALL metrics per USID
             query = """
                 SELECT 
                     USID,
@@ -355,7 +389,7 @@ def get_cqi_data():
                 WHERE 1=1
             """
         else:
-            # Aggregate by USID + METRICNAME when a specific metric is filtered
+            # Aggregate by USID + METRICNAME
             query = """
                 SELECT 
                     USID,
@@ -376,12 +410,11 @@ def get_cqi_data():
                 WHERE 1=1
             """
 
-        # Add filter for specific metrics only
+        # Add filters
         allowed_metrics = list(metric_mapping.keys())
         query += f" AND METRICNAME IN ({','.join(['%s'] * len(allowed_metrics))})"
         params = allowed_metrics.copy()
 
-        # Add additional filters dynamically
         if submarket:
             query += " AND SUBMKT = %s"
             params.append(submarket)
@@ -390,7 +423,6 @@ def get_cqi_data():
             query += " AND CQECLUSTER = %s"
             params.append(cqe_cluster)
 
-        # Handle datetime comparisons
         if period_start:
             query += " AND PERIODSTART >= %s"
             params.append(f"{period_start} 00:00:00")
@@ -400,7 +432,6 @@ def get_cqi_data():
             params.append(f"{period_end} 23:59:59")
 
         if metric_name:
-            # When a specific metric is selected, filter by it
             reverse_mapping = {v: k for k, v in metric_mapping.items()}
             actual_metric = reverse_mapping.get(metric_name, metric_name)
             query += " AND METRICNAME = %s"
@@ -410,23 +441,17 @@ def get_cqi_data():
             query += " AND USID = %s"
             params.append(usid)
 
-        # Group by clause depends on aggregation mode
+        # Group by clause
         if aggregate_all_metrics:
-            # Group by USID only when aggregating all metrics
             query += " GROUP BY USID"
         else:
-            # Group by USID and METRICNAME when filtering by specific metric
             query += " GROUP BY USID, METRICNAME"
 
-        # CRITICAL: Add ORDER BY based on sorting criteria
+        # Order by based on sorting criteria
         if sorting_criteria == 'contribution':
-            # For contribution ranking, sort by IDXCONTR ascending (most negative first = worst)
             query += " ORDER BY AVG_IDXCONTR ASC NULLS LAST"
-            logger.info("Ordering by IDXCONTR (contribution) - worst first")
         else:
-            # For failures ranking, sort by EXTRAFAILURES descending (highest first)
             query += " ORDER BY TOTAL_EXTRAFAILURES DESC NULLS LAST"
-            logger.info("Ordering by EXTRAFAILURES (failures) - highest first")
 
         query += " LIMIT 1000"
 
@@ -434,21 +459,14 @@ def get_cqi_data():
         conn = get_snowflake_connection()
         cur = conn.cursor()
 
-        logger.info(
-            f"Executing {'USID-only' if aggregate_all_metrics else 'USID+Metric'} aggregated query with {len(params)} parameters")
-        logger.info(f"Query will return top offenders by {sorting_criteria}")
-
         if params:
             cur.execute(query, params)
         else:
             cur.execute(query)
 
-        # Fetch results
+        # Fetch and process results
         columns = [desc[0] for desc in cur.description]
         data = cur.fetchall()
-
-        logger.info(
-            f"Query returned {len(data)} aggregated rows sorted by {sorting_criteria}")
 
         cur.close()
         conn.close()
@@ -460,21 +478,15 @@ def get_cqi_data():
             for i, col in enumerate(columns):
                 value = row[i]
 
-                # Handle different data types
                 if col in ['AVG_EXTRAFAILURES', 'TOTAL_EXTRAFAILURES']:
-                    # Clean failure values - sets negative to 0
                     record[col] = clean_numeric_value(value)
                 elif col in ['AVG_IDXCONTR', 'TOTAL_IDXCONTR']:
-                    # Clean contribution values - can be negative (keep as is for contribution)
                     record[col] = clean_contribution_value(value)
                 elif col in ['AVG_ACTUAL', 'AVG_TARGET']:
-                    # Clean numeric averages
                     record[col] = clean_numeric_value(value)
                 elif col == 'RECORD_COUNT':
-                    # Keep count as integer
                     record[col] = int(value) if value else 0
                 elif col in ['EARLIEST_PERIOD', 'LATEST_PERIOD']:
-                    # Handle datetime fields
                     if value is not None:
                         if isinstance(value, (datetime, pd.Timestamp)):
                             record[col] = value.isoformat()
@@ -483,19 +495,16 @@ def get_cqi_data():
                     else:
                         record[col] = None
                 else:
-                    # String fields
                     record[col] = value
 
-            # Add metric display name
+            # Add display fields
             if aggregate_all_metrics or record.get('METRICNAME') == 'ALL':
-                # When aggregating all metrics, display "All"
                 record['METRIC_DISPLAY'] = 'All'
             elif record.get('METRICNAME') in metric_mapping:
                 record['METRIC_DISPLAY'] = metric_mapping[record['METRICNAME']]
             else:
                 record['METRIC_DISPLAY'] = record.get('METRICNAME', '')
 
-            # For compatibility, also include EXTRAFAILURES as the average
             record['EXTRAFAILURES'] = record.get('AVG_EXTRAFAILURES', 0)
             record['IDXCONTR'] = record.get('AVG_IDXCONTR', 0)
 
@@ -505,8 +514,6 @@ def get_cqi_data():
 
     except Exception as e:
         logger.error(f"Error fetching CQI data: {str(e)}")
-        import traceback
-        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
@@ -517,7 +524,7 @@ def get_summary_stats():
         conn = get_snowflake_connection()
         cur = conn.cursor()
 
-        # Get date range for last 2 days (reduced from 7 for better performance)
+        # Get date range for last 2 days
         end_date = datetime.now().strftime('%Y-%m-%d 23:59:59')
         start_date = (datetime.now() - timedelta(days=2)
                       ).strftime('%Y-%m-%d 00:00:00')
@@ -596,8 +603,6 @@ def get_usid_detail():
         if not usid:
             return jsonify({'error': 'USID is required'}), 400
 
-        logger.info(f"USID detail request for {usid}")
-
         # Define metric mapping
         metric_mapping = {
             'VOICE_CDR_RET_25': 'V-CDR',
@@ -647,7 +652,7 @@ def get_usid_detail():
             query += " AND METRICNAME = %s"
             params.append(actual_metric)
 
-        # Group by date and metric, order by date
+        # Group by date and metric
         query += """
             GROUP BY USID, METRICNAME, DATE(PERIODSTART)
             ORDER BY DATE(PERIODSTART), METRICNAME
@@ -657,14 +662,11 @@ def get_usid_detail():
         conn = get_snowflake_connection()
         cur = conn.cursor()
 
-        logger.info(f"Executing USID detail query for {usid}")
         cur.execute(query, params)
 
         # Fetch results
         columns = [desc[0] for desc in cur.description]
         data = cur.fetchall()
-
-        logger.info(f"Retrieved {len(data)} data points for USID {usid}")
 
         cur.close()
         conn.close()
@@ -677,10 +679,8 @@ def get_usid_detail():
                 value = row[i]
 
                 if col == 'EXTRAFAILURES':
-                    # Set negative values to 0
                     record[col] = clean_numeric_value(value)
                 elif col == 'DATE':
-                    # Format date as ISO string
                     if value:
                         if hasattr(value, 'isoformat'):
                             record['PERIODSTART'] = value.isoformat()
@@ -703,8 +703,6 @@ def get_usid_detail():
 
     except Exception as e:
         logger.error(f"Error fetching USID detail data: {str(e)}")
-        import traceback
-        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
@@ -719,14 +717,26 @@ def internal_error(error):
 
 
 if __name__ == '__main__':
-    # Run the Flask app
-    print("🚀 Starting CQI Dashboard API Server...")
-    print("📊 API will be available at: http://localhost:5000")
-    print("✅ Snowflake connection configured")
-    print("📇 Verbose logging suppressed - only warnings/errors will show")
-    print("⚡ Default date range: Last 2 days (for optimal performance)")
-    print("🔄 ENHANCED: Fresh data pulls when ranking criteria changes")
+    print("🚀 Starting CQI Dashboard API Server (Secured)...")
+
+    # Check configuration
+    if validate_config():
+        print("✅ Configuration loaded from environment variables")
+        print(
+            f"📊 Connecting to Snowflake as user: {SNOWFLAKE_CONFIG.get('user')}")
+    else:
+        print("❌ Configuration incomplete. Please check environment variables.")
+        print("\nRequired environment variables:")
+        print("  SNOWFLAKE_USER")
+        print("  SNOWFLAKE_PRIVATE_KEY_PATH or SNOWFLAKE_PASSWORD")
+        print("\nOptional environment variables:")
+        print("  SNOWFLAKE_ACCOUNT (default: nsasprd.east-us-2.privatelink)")
+        print("  SNOWFLAKE_WAREHOUSE (default: USR_REPORTING_WH)")
+        print("  SNOWFLAKE_DATABASE (default: PRD_MOBILITY)")
+        print("  SNOWFLAKE_SCHEMA (default: PRD_MOBILITYSCORECARD_VIEWS)")
+        print("  SNOWFLAKE_PRIVATE_KEY_PASSPHRASE (if key is encrypted)")
+
+    print("\n📡 API will be available at: http://localhost:5000")
     print("-" * 50)
 
-    # Set debug=False for production to reduce logging
     app.run(debug=False, host='0.0.0.0', port=5000)
