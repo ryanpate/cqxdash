@@ -3,7 +3,7 @@
 Write-Host "Setting up CQI Dashboard for IIS..." -ForegroundColor Cyan
 
 # 1. Create directories
-$baseDir = "C:\inetpub\wwwroot\cqxdashboard"
+$baseDir = "E:\inetpub\wwwroot\cqxdashboard"
 $apiDir = "$baseDir\api"
 $logsDir = "$baseDir\logs"
 
@@ -19,7 +19,7 @@ import logging
 
 # Setup logging
 logging.basicConfig(
-    filename='C:/inetpub/wwwroot/cqxdashboard/logs/flask_api.log',
+    filename='E:/inetpub/wwwroot/cqxdashboard/logs/flask_api.log',
     level=logging.INFO,
     format='%(asctime)s %(levelname)s: %(message)s'
 )
