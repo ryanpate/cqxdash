@@ -19,7 +19,7 @@ from dotenv import load_dotenv  # For loading .env file
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+CORS(app, origins='*', allow_headers='*', methods=['GET', 'POST', 'OPTIONS'])
 
 # Configure logging
 logging.basicConfig(level=logging.WARNING)
@@ -155,6 +155,16 @@ def get_snowflake_connection():
         logger.error(f"Failed to connect to Snowflake: {str(e)}")
         raise
 
+
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers',
+                         'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods',
+                         'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Max-Age', '3600')
+    return response
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
