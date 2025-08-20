@@ -739,4 +739,5 @@ if __name__ == '__main__':
     print("\n📡 API will be available at: http://localhost:5000")
     print("-" * 50)
 
-    app.run(debug=False, host='0.0.0.0', port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='127.0.0.1', port=port, debug=False, threaded=True)
