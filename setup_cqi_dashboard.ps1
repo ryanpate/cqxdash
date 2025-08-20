@@ -96,7 +96,7 @@ Write-Host "✓ Permissions set" -ForegroundColor Green
 # 5. Configure IIS site
 Write-Host "Configuring IIS..." -ForegroundColor Yellow
 
-Import-Module WebAdministration
+Import-Module WebAdministration -ErrorAction SilentlyContinue
 
 # Check if site exists
 $siteName = "cqxdashboard.web.att.com"
@@ -107,7 +107,10 @@ if ($site) {
     Set-ItemProperty "IIS:\Sites\$($site.Name)" -Name physicalPath -Value $baseDir
     
     # Update binding to port 8000
-    Set-WebBinding -Name $site.Name -BindingInformation "*:8000:" -PropertyName Port -Value 8000
+    $binding = Get-WebBinding -Name $site.Name
+    if ($binding) {
+        Set-WebBinding -Name $site.Name -BindingInformation "*:8000:" -PropertyName Port -Value 8000
+    }
     
     Write-Host "✓ IIS site configured" -ForegroundColor Green
 } else {
@@ -145,7 +148,7 @@ Start-Sleep -Seconds 5
 
 # 8. Verify everything is working
 Write-Host "`nVerifying setup..." -ForegroundColor Cyan
-Write-Host "=" * 50
+Write-Host ("=" * 50)
 
 # Check port 5000
 $port5000 = Get-NetTCPConnection -LocalPort 5000 -ErrorAction SilentlyContinue
@@ -172,9 +175,12 @@ if ($iisStatus -and $iisStatus.State -eq "Started") {
     Write-Host "✗ IIS site is not running" -ForegroundColor Red
 }
 
-Write-Host "`n" + "=" * 50 -ForegroundColor Cyan
+Write-Host ""
+Write-Host ("=" * 50) -ForegroundColor Cyan
 Write-Host "Setup Complete!" -ForegroundColor Green
-Write-Host "=" * 50 -ForegroundColor Cyan
-Write-Host "`nDashboard URL: http://cqxdashboard.web.att.com:8000" -ForegroundColor Cyan
+Write-Host ("=" * 50) -ForegroundColor Cyan
+Write-Host ""
+Write-Host "Dashboard URL: http://cqxdashboard.web.att.com:8000" -ForegroundColor Cyan
 Write-Host "Direct API URL: http://localhost:5000/api/health" -ForegroundColor Cyan
-Write-Host "`nLogs location: $logsDir" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "Logs location: $logsDir" -ForegroundColor Yellow
