@@ -66,8 +66,8 @@ def start_web_server():
             if args[1] != '200':
                 super().log_message(format, *args)
     
-    print("🌐 Starting web server on http://localhost:8080")
-    httpd = HTTPServer(('localhost', 8080), QuietHTTPRequestHandler)
+    print("🌐 Starting web server on http://localhost:8000")
+    httpd = HTTPServer(('localhost', 8000), QuietHTTPRequestHandler)
     httpd.serve_forever()
 
 
