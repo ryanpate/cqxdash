@@ -174,7 +174,7 @@ def main():
     print("  • Click USID for detailed metrics view")
     print("\n📝 Troubleshooting:")
     print("  • If 'API not running' error: Refresh page after 5 seconds")
-    print("  • Check ports 5000 and 8080 are not in use")
+    print("  • Check ports 5000 and 8000 are not in use")
     print("  • Ensure private_key.txt exists for real Snowflake data")
     print("\n⛔ Press Ctrl+C to stop all services")
     print("=" * 60)
