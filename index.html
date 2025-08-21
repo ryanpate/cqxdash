@@ -483,7 +483,8 @@
                     </select>
                 </div>
                 <div class="filter-group">
-                    <label for="cqeCluster">CQE Cluster <span id="clusterCount" class="selected-count" style="display: none;">0</span></label>
+                    <label for="cqeCluster">CQE Cluster <span id="clusterCount" class="selected-count"
+                            style="display: none;">0</span></label>
                     <div class="multi-select-container">
                         <div class="multi-select-input" id="cqeClusterInput">
                             <span class="multi-select-text" id="cqeClusterText">All Clusters</span>
@@ -513,7 +514,7 @@
                 </div>
                 <div class="filter-group">
                     <label for="usid">USID</label>
-                    <input type="text" id="usid" placeholder="Enter USID">
+                    <input type="text" id="usid" placeholder="Enter USID + Enter for details">
                 </div>
                 <div class="filter-group">
                     <label for="sortingCriteria">⭐ Ranking Criteria</label>
@@ -564,7 +565,10 @@
                 <strong>🔄 Fresh Data on Ranking Change:</strong> When you switch between Contribution (IDXCONTR) and
                 Extra Failures ranking, the dashboard automatically fetches fresh data from Snowflake because these
                 metrics don't directly correlate for top offenders.<br><br>
-                <strong>📊 Multi-Select CQE Clusters:</strong> You can now select multiple CQE Clusters to filter data. Click the dropdown and check multiple options, or use "Select All" to choose all clusters at once.<br>
+                <strong>📊 Multi-Select CQE Clusters:</strong> You can now select multiple CQE Clusters to filter data.
+                Click the dropdown and check multiple options, or use "Select All" to choose all clusters at once.<br>
+                <strong>🔍 Quick USID Lookup:</strong> Enter a USID in the filter field and click "Apply Filters" (or
+                press Enter) to open its detail page in a new tab.<br>
                 <strong>Contribution Ranking:</strong> Smallest to largest (most negative/worst values first). Negative
                 values (red) are worse performance, positive values (green) are better.<br>
                 <strong>Failures Ranking:</strong> Largest to smallest (highest failure counts first).<br>
@@ -573,8 +577,8 @@
                 CRITICAL ≥10% | HIGH 5-10% | MEDIUM 1-5% | LOW <1%<br>
                     <strong>Metric Aggregation:</strong> When no metric filter is selected, all metrics are aggregated
                     per USID and shown as "All" in the table.<br>
-                    <strong>Click USID:</strong> Click on any USID to view detailed metrics over time (Extra Failures
-                    only).<br>
+                    <strong>Click USID:</strong> Click on any USID in the table to view detailed metrics over time in a
+                    new tab.<br>
                     <strong>Data Processing:</strong> Negative failure values are treated as 0. Contribution values can
                     be positive or negative.<br>
                     <strong>🛠 Debugging:</strong> If the dashboard is stuck loading, press F12 and check the Console
@@ -682,9 +686,9 @@
             const input = document.getElementById('cqeClusterInput');
             const dropdown = document.getElementById('cqeClusterDropdown');
             const arrow = document.getElementById('cqeClusterArrow');
-            
+
             // Toggle dropdown on input click
-            input.addEventListener('click', function(e) {
+            input.addEventListener('click', function (e) {
                 e.stopPropagation();
                 dropdown.classList.toggle('open');
                 arrow.classList.toggle('open');
@@ -692,7 +696,7 @@
             });
 
             // Close dropdown when clicking outside
-            document.addEventListener('click', function(e) {
+            document.addEventListener('click', function (e) {
                 if (!e.target.closest('.multi-select-container')) {
                     dropdown.classList.remove('open');
                     arrow.classList.remove('open');
@@ -701,7 +705,7 @@
             });
 
             // Handle select all checkbox
-            document.getElementById('selectAllClusters').addEventListener('change', function() {
+            document.getElementById('selectAllClusters').addEventListener('change', function () {
                 const checkboxes = dropdown.querySelectorAll('input[type="checkbox"]:not(#selectAllClusters)');
                 checkboxes.forEach(cb => {
                     cb.checked = this.checked;
@@ -718,9 +722,9 @@
             const selectAllCheckbox = document.getElementById('selectAllClusters');
             const textElement = document.getElementById('cqeClusterText');
             const countElement = document.getElementById('clusterCount');
-            
+
             selectedClusters = Array.from(checkboxes).map(cb => cb.value);
-            
+
             // Update select all checkbox state
             if (checkboxes.length === allCheckboxes.length) {
                 selectAllCheckbox.checked = true;
@@ -732,7 +736,7 @@
                 selectAllCheckbox.checked = false;
                 selectAllCheckbox.indeterminate = false;
             }
-            
+
             // Update display text
             if (selectedClusters.length === 0 || selectedClusters.length === allCheckboxes.length) {
                 textElement.textContent = 'All Clusters';
@@ -750,27 +754,27 @@
         // Populate multi-select dropdown with options
         function populateMultiSelect(elementId, options) {
             const dropdown = document.getElementById(`${elementId}Dropdown`);
-            
+
             // Keep the select all option
             const selectAllOption = dropdown.querySelector('.multi-select-all');
             dropdown.innerHTML = '';
             dropdown.appendChild(selectAllOption);
-            
+
             if (options && options.length > 0) {
                 options.forEach(option => {
                     const div = document.createElement('div');
                     div.className = 'multi-select-option';
-                    
+
                     const checkbox = document.createElement('input');
                     checkbox.type = 'checkbox';
                     checkbox.id = `cluster_${option}`;
                     checkbox.value = option;
                     checkbox.addEventListener('change', updateSelectedClusters);
-                    
+
                     const label = document.createElement('label');
                     label.setAttribute('for', `cluster_${option}`);
                     label.textContent = option;
-                    
+
                     div.appendChild(checkbox);
                     div.appendChild(label);
                     dropdown.appendChild(div);
@@ -793,6 +797,23 @@
                 indicator.style.display = 'inline-block';
                 setTimeout(() => indicator.style.display = 'none', 3000);
                 fetchData();
+            });
+
+            // Add Enter key event listener for USID input field
+            document.getElementById('usid').addEventListener('keypress', function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const usidValue = this.value.trim();
+                    if (usidValue) {
+                        // Open USID detail page in new tab
+                        window.open(`usid_detail.html?usid=${encodeURIComponent(usidValue)}`, '_blank');
+                        // Clear the USID field after opening
+                        this.value = '';
+                    } else {
+                        // If no USID entered, apply filters normally
+                        fetchData();
+                    }
+                }
             });
         });
 
@@ -1011,9 +1032,9 @@
             const submarkets = ['NYC', 'LA', 'Chicago', 'Houston', 'Phoenix'];
 
             const selectedMetric = document.getElementById('metricName').value;
-            
+
             // Filter clusters based on selection
-            const filteredClusters = selectedClusters.length > 0 ? 
+            const filteredClusters = selectedClusters.length > 0 ?
                 clusters.filter(c => selectedClusters.includes(c)) : clusters;
 
             if (!selectedMetric) {
@@ -1291,7 +1312,7 @@
 
                 tr.innerHTML = `
                     <td><strong>#${index + 1}</strong></td>
-                    <td><a href="usid_detail.html?usid=${row.USID}" class="usid-link">${row.USID || '-'}</a></td>
+                    <td><a href="usid_detail.html?usid=${row.USID}" target="_blank" class="usid-link">${row.USID || '-'}</a></td>
                     <td>${metricDisplay}</td>
                     <td>${contribCell}</td>
                     <td>${totalFailuresCell}</td>
@@ -1305,13 +1326,13 @@
 
         function resetFilters() {
             document.getElementById('submarket').value = '';
-            
+
             // Reset multi-select clusters
             const checkboxes = document.querySelectorAll('#cqeClusterDropdown input[type="checkbox"]');
             checkboxes.forEach(cb => cb.checked = false);
             selectedClusters = [];
             updateSelectedClusters();
-            
+
             document.getElementById('metricName').value = '';
             document.getElementById('usid').value = '';
             document.getElementById('sortingCriteria').value = 'contribution';
