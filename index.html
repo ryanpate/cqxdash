@@ -88,6 +88,118 @@
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
 
+        /* Multi-select dropdown styles */
+        .multi-select-container {
+            position: relative;
+        }
+
+        .multi-select-input {
+            padding: 10px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 44px;
+            transition: all 0.3s ease;
+        }
+
+        .multi-select-input:hover {
+            border-color: #cbd5e0;
+        }
+
+        .multi-select-input.active {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .multi-select-text {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            margin-right: 8px;
+        }
+
+        .multi-select-arrow {
+            width: 0;
+            height: 0;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 5px solid #718096;
+            transition: transform 0.3s ease;
+        }
+
+        .multi-select-arrow.open {
+            transform: rotate(180deg);
+        }
+
+        .multi-select-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .multi-select-dropdown.open {
+            display: block;
+        }
+
+        .multi-select-option {
+            padding: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            transition: background-color 0.2s ease;
+        }
+
+        .multi-select-option:hover {
+            background: #f7fafc;
+        }
+
+        .multi-select-option input[type="checkbox"] {
+            margin-right: 10px;
+            cursor: pointer;
+        }
+
+        .multi-select-option label {
+            cursor: pointer;
+            flex: 1;
+            margin: 0;
+            font-weight: normal;
+            text-transform: none;
+            letter-spacing: normal;
+            color: #2d3748;
+        }
+
+        .multi-select-all {
+            border-bottom: 1px solid #e2e8f0;
+            background: #f7fafc;
+            font-weight: 600;
+        }
+
+        .selected-count {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            margin-left: 5px;
+        }
+
         /* Highlight the sorting criteria dropdown */
         #sortingCriteria {
             background: linear-gradient(to right, #f0f4f8 0%, #ffffff 100%);
@@ -250,7 +362,6 @@
             border-bottom: 1px dotted #667eea;
         }
 
-        /* Contribution value styling */
         td strong[title*="Average:"] {
             color: #2d3748;
         }
@@ -372,10 +483,19 @@
                     </select>
                 </div>
                 <div class="filter-group">
-                    <label for="cqeCluster">CQE Cluster</label>
-                    <select id="cqeCluster">
-                        <option value="">All Clusters</option>
-                    </select>
+                    <label for="cqeCluster">CQE Cluster <span id="clusterCount" class="selected-count" style="display: none;">0</span></label>
+                    <div class="multi-select-container">
+                        <div class="multi-select-input" id="cqeClusterInput">
+                            <span class="multi-select-text" id="cqeClusterText">All Clusters</span>
+                            <span class="multi-select-arrow" id="cqeClusterArrow"></span>
+                        </div>
+                        <div class="multi-select-dropdown" id="cqeClusterDropdown">
+                            <div class="multi-select-option multi-select-all">
+                                <input type="checkbox" id="selectAllClusters">
+                                <label for="selectAllClusters">Select All</label>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="filter-group">
                     <label for="periodStart">Period Start</label>
@@ -444,6 +564,7 @@
                 <strong>🔄 Fresh Data on Ranking Change:</strong> When you switch between Contribution (IDXCONTR) and
                 Extra Failures ranking, the dashboard automatically fetches fresh data from Snowflake because these
                 metrics don't directly correlate for top offenders.<br><br>
+                <strong>📊 Multi-Select CQE Clusters:</strong> You can now select multiple CQE Clusters to filter data. Click the dropdown and check multiple options, or use "Select All" to choose all clusters at once.<br>
                 <strong>Contribution Ranking:</strong> Smallest to largest (most negative/worst values first). Negative
                 values (red) are worse performance, positive values (green) are better.<br>
                 <strong>Failures Ranking:</strong> Largest to smallest (highest failure counts first).<br>
@@ -456,7 +577,7 @@
                     only).<br>
                     <strong>Data Processing:</strong> Negative failure values are treated as 0. Contribution values can
                     be positive or negative.<br>
-                    <strong>🐛 Debugging:</strong> If the dashboard is stuck loading, press F12 and check the Console
+                    <strong>🛠 Debugging:</strong> If the dashboard is stuck loading, press F12 and check the Console
                     tab for error messages.
             </div>
 
@@ -494,19 +615,17 @@
         let currentData = [];
         let apiAvailable = false;
         let metricMapping = {};
+        let selectedClusters = [];
 
         // Utility function to format large numbers compactly
-        // Note: Negative values are set to 0
         function formatCompactNumber(num) {
             if (num === null || num === undefined || num === '' || isNaN(num)) return '0';
 
-            // Convert to number and check validity
             num = Number(num);
             if (!isFinite(num)) return '0';
 
-            // Set negative values to 0
             if (num < 0) return '0';
-            num = Math.round(num); // Ensure integer
+            num = Math.round(num);
 
             if (num >= 1000000) {
                 return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
@@ -524,15 +643,12 @@
             num = Number(num);
             if (!isFinite(num)) return '0';
 
-            // For very small numbers (less than 1), show more decimal places
             if (Math.abs(num) < 1 && Math.abs(num) > 0) {
                 return num.toFixed(4);
             }
-            // For numbers less than 1000, show 2 decimal places
             else if (Math.abs(num) < 1000) {
                 return num.toFixed(2);
             }
-            // For larger numbers, use compact format
             else {
                 const absNum = Math.abs(num);
                 let formatted;
@@ -553,31 +669,129 @@
         function formatFullNumber(num) {
             if (num === null || num === undefined || num === '' || isNaN(num)) return '0';
 
-            // Convert to number and check validity
             num = Number(num);
             if (!isFinite(num)) return '0';
 
-            // Set negative values to 0
             if (num < 0) return '0';
 
             return Math.round(num).toLocaleString();
+        }
+
+        // Initialize multi-select dropdown
+        function initializeMultiSelect() {
+            const input = document.getElementById('cqeClusterInput');
+            const dropdown = document.getElementById('cqeClusterDropdown');
+            const arrow = document.getElementById('cqeClusterArrow');
+            
+            // Toggle dropdown on input click
+            input.addEventListener('click', function(e) {
+                e.stopPropagation();
+                dropdown.classList.toggle('open');
+                arrow.classList.toggle('open');
+                input.classList.toggle('active');
+            });
+
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function(e) {
+                if (!e.target.closest('.multi-select-container')) {
+                    dropdown.classList.remove('open');
+                    arrow.classList.remove('open');
+                    input.classList.remove('active');
+                }
+            });
+
+            // Handle select all checkbox
+            document.getElementById('selectAllClusters').addEventListener('change', function() {
+                const checkboxes = dropdown.querySelectorAll('input[type="checkbox"]:not(#selectAllClusters)');
+                checkboxes.forEach(cb => {
+                    cb.checked = this.checked;
+                });
+                updateSelectedClusters();
+            });
+        }
+
+        // Update selected clusters array and display
+        function updateSelectedClusters() {
+            const dropdown = document.getElementById('cqeClusterDropdown');
+            const checkboxes = dropdown.querySelectorAll('input[type="checkbox"]:not(#selectAllClusters):checked');
+            const allCheckboxes = dropdown.querySelectorAll('input[type="checkbox"]:not(#selectAllClusters)');
+            const selectAllCheckbox = document.getElementById('selectAllClusters');
+            const textElement = document.getElementById('cqeClusterText');
+            const countElement = document.getElementById('clusterCount');
+            
+            selectedClusters = Array.from(checkboxes).map(cb => cb.value);
+            
+            // Update select all checkbox state
+            if (checkboxes.length === allCheckboxes.length) {
+                selectAllCheckbox.checked = true;
+                selectAllCheckbox.indeterminate = false;
+            } else if (checkboxes.length > 0) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = true;
+            } else {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+            }
+            
+            // Update display text
+            if (selectedClusters.length === 0 || selectedClusters.length === allCheckboxes.length) {
+                textElement.textContent = 'All Clusters';
+                countElement.style.display = 'none';
+            } else if (selectedClusters.length === 1) {
+                textElement.textContent = selectedClusters[0];
+                countElement.style.display = 'none';
+            } else {
+                textElement.textContent = `${selectedClusters.length} clusters selected`;
+                countElement.textContent = selectedClusters.length;
+                countElement.style.display = 'inline-block';
+            }
+        }
+
+        // Populate multi-select dropdown with options
+        function populateMultiSelect(elementId, options) {
+            const dropdown = document.getElementById(`${elementId}Dropdown`);
+            
+            // Keep the select all option
+            const selectAllOption = dropdown.querySelector('.multi-select-all');
+            dropdown.innerHTML = '';
+            dropdown.appendChild(selectAllOption);
+            
+            if (options && options.length > 0) {
+                options.forEach(option => {
+                    const div = document.createElement('div');
+                    div.className = 'multi-select-option';
+                    
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.id = `cluster_${option}`;
+                    checkbox.value = option;
+                    checkbox.addEventListener('change', updateSelectedClusters);
+                    
+                    const label = document.createElement('label');
+                    label.setAttribute('for', `cluster_${option}`);
+                    label.textContent = option;
+                    
+                    div.appendChild(checkbox);
+                    div.appendChild(label);
+                    dropdown.appendChild(div);
+                });
+            }
         }
 
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', function () {
             console.log('🚀 Dashboard initializing...');
             setDefaultDates();
+            initializeMultiSelect();
             checkAPIConnection();
 
-            // CRITICAL: Add event listener for sorting criteria change to fetch fresh data
+            // Add event listener for sorting criteria change to fetch fresh data
             document.getElementById('sortingCriteria').addEventListener('change', function () {
                 console.log('📊 Ranking criteria changed to:', this.value);
                 console.log('🔄 Fetching fresh data from Snowflake...');
-                // Show fresh data indicator
                 const indicator = document.getElementById('freshDataIndicator');
                 indicator.style.display = 'inline-block';
                 setTimeout(() => indicator.style.display = 'none', 3000);
-                // Always fetch fresh data when criteria changes - don't use cached data
                 fetchData();
             });
         });
@@ -651,7 +865,6 @@
         async function loadFilterOptions() {
             try {
                 console.log('📋 Loading filter options...');
-                // Fetch filter options from API
                 const response = await fetch(`${API_URL}/filters`);
 
                 console.log('📋 Filters response status:', response.status);
@@ -660,7 +873,6 @@
                     const data = await response.json();
                     console.log('📋 Filters data received:', data);
 
-                    // Store metric mapping if available
                     if (data.metricMapping) {
                         metricMapping = data.metricMapping;
                         console.log('🔧 Metric mapping stored:', Object.keys(metricMapping).length, 'metrics');
@@ -668,12 +880,12 @@
 
                     console.log('📋 Populating filter dropdowns...');
                     populateSelect('submarket', data.submarkets);
-                    populateSelect('cqeCluster', data.cqeClusters);
+                    // Use multi-select for CQE Clusters
+                    populateMultiSelect('cqeCluster', data.cqeClusters);
                     populateSelect('metricName', data.metricNames);
                     console.log('✅ Filter options loaded successfully');
                 } else {
                     console.error('❌ Filter options API error:', response.status);
-                    // Use sample data if API is not available
                     useSampleData();
                 }
             } catch (error) {
@@ -697,21 +909,24 @@
         }
 
         async function fetchData() {
-            // CRITICAL: Include sorting criteria in the API request
             const sortingCriteria = document.getElementById('sortingCriteria').value;
+
+            // Get selected clusters (empty array means all)
+            const clusterValues = selectedClusters.length > 0 ? selectedClusters.join(',') : '';
 
             const filters = {
                 submarket: document.getElementById('submarket').value,
-                cqeCluster: document.getElementById('cqeCluster').value,
+                cqeClusters: clusterValues,  // Changed from cqeCluster to cqeClusters (plural)
                 periodStart: document.getElementById('periodStart').value,
                 periodEnd: document.getElementById('periodEnd').value,
                 metricName: document.getElementById('metricName').value,
                 usid: document.getElementById('usid').value,
-                sortingCriteria: sortingCriteria  // Pass sorting criteria to backend
+                sortingCriteria: sortingCriteria
             };
 
             console.log('🔄 Starting fetchData with filters:', filters);
             console.log('📊 Ranking criteria:', sortingCriteria);
+            console.log('📍 Selected clusters:', selectedClusters);
             showLoading();
 
             if (!apiAvailable) {
@@ -750,9 +965,6 @@
                             console.log(`🎯 Data is sorted by ${sortingCriteria} at the database level`);
                             if (data.length > 0) {
                                 console.log('🔍 First record keys:', Object.keys(data[0]));
-                                console.log('🔍 Sample USID:', data[0].USID);
-                                console.log('🔍 Sample EXTRAFAILURES:', data[0].EXTRAFAILURES);
-                                console.log('🔍 Sample IDXCONTR:', data[0].IDXCONTR);
                             }
                             currentData = data;
                             updateDashboard(data);
@@ -792,45 +1004,38 @@
         }
 
         function generateSampleData() {
-            // Generate sample aggregated data for demonstration
             const sampleData = [];
             const metrics = ['V-CDR', 'NS/ESO', 'Quality RSRP', 'Quality RSRQ', 'V-ACC', 'V-ACC-E2E', 'D-ACC', 'DLTPUT', 'ULTPUT', 'D-RET', 'WIFI-RET'];
             const vendors = ['Nokia', 'Ericsson', 'Huawei', 'Samsung'];
             const clusters = ['CQE_EAST', 'CQE_WEST', 'CQE_CENTRAL', 'CQE_SOUTH'];
             const submarkets = ['NYC', 'LA', 'Chicago', 'Houston', 'Phoenix'];
 
-            // Check if a metric filter is selected
             const selectedMetric = document.getElementById('metricName').value;
+            
+            // Filter clusters based on selection
+            const filteredClusters = selectedClusters.length > 0 ? 
+                clusters.filter(c => selectedClusters.includes(c)) : clusters;
 
             if (!selectedMetric) {
-                // No metric filter - aggregate all metrics per USID
                 for (let i = 0; i < 50; i++) {
                     const usid = `US${10000 + i}`;
 
-                    // Generate random failures with realistic distribution (no negative values)
                     let avgFailures;
                     const rand = Math.random();
                     if (rand > 0.95) {
-                        // 5% critical offenders - very high average
                         avgFailures = Math.floor(Math.random() * 30000) + 10000;
                     } else if (rand > 0.8) {
-                        // 15% high offenders
                         avgFailures = Math.floor(Math.random() * 5000) + 1000;
                     } else if (rand > 0.5) {
-                        // 30% medium offenders
                         avgFailures = Math.floor(Math.random() * 500) + 100;
                     } else {
-                        // 50% low or no failures
                         avgFailures = Math.floor(Math.random() * 100);
                     }
 
-                    // Random number of records (simulating multiple metrics and dates)
                     const recordCount = Math.floor(Math.random() * 100) + 20;
                     const totalFailures = avgFailures * recordCount;
 
-                    // Generate contribution value (can be positive or negative, small values)
-                    // Make it more realistic - mix of small positive/negative values
-                    const baseContrib = (Math.random() - 0.6) * 0.1; // Bias toward negative (worse)
+                    const baseContrib = (Math.random() - 0.6) * 0.1;
                     const avgContribution = parseFloat(baseContrib.toFixed(4));
                     const totalContribution = avgContribution * recordCount;
 
@@ -842,68 +1047,11 @@
                         TOTAL_EXTRAFAILURES: totalFailures,
                         AVG_IDXCONTR: avgContribution,
                         TOTAL_IDXCONTR: totalContribution,
-                        IDXCONTR: avgContribution, // Use this for display
+                        IDXCONTR: avgContribution,
                         RECORD_COUNT: recordCount,
-                        EXTRAFAILURES: avgFailures, // For compatibility
+                        EXTRAFAILURES: avgFailures,
                         VENDOR: vendors[Math.floor(Math.random() * vendors.length)],
-                        CQECLUSTER: clusters[Math.floor(Math.random() * clusters.length)],
-                        SUBMKT: submarkets[Math.floor(Math.random() * submarkets.length)],
-                        EARLIEST_PERIOD: new Date(Date.now() - recordCount * 24 * 60 * 60 * 1000).toISOString(),
-                        LATEST_PERIOD: new Date().toISOString()
-                    });
-                }
-            } else {
-                // Specific metric filter - show USID + Metric combinations
-                const usedCombinations = new Set();
-
-                for (let i = 0; i < 100; i++) {
-                    const usid = `US${10000 + Math.floor(i / 2)}`; // Each USID appears with ~2 metrics
-                    const metric = selectedMetric;
-                    const combination = `${usid}-${metric}`;
-
-                    // Skip if this combination already exists
-                    if (usedCombinations.has(combination)) continue;
-                    usedCombinations.add(combination);
-
-                    // Generate random failures with realistic distribution (no negative values)
-                    let avgFailures;
-                    const rand = Math.random();
-                    if (rand > 0.95) {
-                        // 5% critical offenders - very high average
-                        avgFailures = Math.floor(Math.random() * 30000) + 10000;
-                    } else if (rand > 0.8) {
-                        // 15% high offenders
-                        avgFailures = Math.floor(Math.random() * 5000) + 1000;
-                    } else if (rand > 0.5) {
-                        // 30% medium offenders
-                        avgFailures = Math.floor(Math.random() * 500) + 100;
-                    } else {
-                        // 50% low or no failures
-                        avgFailures = Math.floor(Math.random() * 100);
-                    }
-
-                    // Random number of records (1-30 days)
-                    const recordCount = Math.floor(Math.random() * 29) + 1;
-                    const totalFailures = avgFailures * recordCount;
-
-                    // Generate contribution value (can be positive or negative, small values)
-                    const baseContrib = (Math.random() - 0.6) * 0.1; // Bias toward negative
-                    const avgContribution = parseFloat(baseContrib.toFixed(4));
-                    const totalContribution = avgContribution * recordCount;
-
-                    sampleData.push({
-                        USID: usid,
-                        METRICNAME: metric,
-                        METRIC_DISPLAY: metric,
-                        AVG_EXTRAFAILURES: avgFailures,
-                        TOTAL_EXTRAFAILURES: totalFailures,
-                        AVG_IDXCONTR: avgContribution,
-                        TOTAL_IDXCONTR: totalContribution,
-                        IDXCONTR: avgContribution, // Use this for display
-                        RECORD_COUNT: recordCount,
-                        EXTRAFAILURES: avgFailures, // For compatibility
-                        VENDOR: vendors[Math.floor(Math.random() * vendors.length)],
-                        CQECLUSTER: clusters[Math.floor(Math.random() * clusters.length)],
+                        CQECLUSTER: filteredClusters[Math.floor(Math.random() * filteredClusters.length)],
                         SUBMKT: submarkets[Math.floor(Math.random() * submarkets.length)],
                         EARLIEST_PERIOD: new Date(Date.now() - recordCount * 24 * 60 * 60 * 1000).toISOString(),
                         LATEST_PERIOD: new Date().toISOString()
@@ -911,9 +1059,8 @@
                 }
             }
 
-            // Also populate filter options with sample data
             populateSelect('submarket', submarkets);
-            populateSelect('cqeCluster', clusters);
+            populateMultiSelect('cqeCluster', clusters);
             populateSelect('metricName', metrics);
 
             currentData = sampleData;
@@ -937,12 +1084,7 @@
                 console.log(`📊 Processing ${data.length} records`);
                 hideLoading();
 
-                // Update statistics
-                console.log('📈 Updating stats...');
                 updateStats(data);
-
-                // Update table
-                console.log('📋 Updating table...');
                 updateTable(data);
 
                 console.log('✅ Dashboard update complete');
@@ -957,20 +1099,16 @@
             try {
                 console.log('📈 Updating statistics...');
 
-                // Get the selected sorting criteria
                 const sortingCriteria = document.getElementById('sortingCriteria').value;
 
-                // Update the label based on selection
                 if (sortingCriteria === 'contribution') {
                     document.getElementById('totalMetricLabel').textContent = 'Total Contribution';
                 } else {
                     document.getElementById('totalMetricLabel').textContent = 'Total Extra Failures';
                 }
 
-                // Check if we're showing "All" metrics or specific metrics
                 const isShowingAllMetrics = data.length > 0 && (data[0].METRIC_DISPLAY === 'All' || data[0].METRICNAME === 'ALL');
 
-                // Count total offenders based on selected criteria
                 const offenders = data.filter(row => {
                     if (sortingCriteria === 'contribution') {
                         const contrib = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
@@ -989,7 +1127,6 @@
                     let critical = 0;
 
                     if (sortingCriteria === 'contribution') {
-                        // Calculate total contribution using raw IDXCONTR values
                         totalValue = data.reduce((sum, row) => {
                             const contrib = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
                             const total = row.TOTAL_IDXCONTR ?
@@ -998,7 +1135,6 @@
                             return sum + total;
                         }, 0);
 
-                        // Count critical based on contribution percentage
                         critical = data.filter(row => {
                             const contrib = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
                             const rowTotal = row.TOTAL_IDXCONTR ?
@@ -1009,12 +1145,10 @@
                             return percentageOfTotal >= 10;
                         }).length;
 
-                        // Format contribution (can be negative, show full precision)
                         const displayValue = formatContribution(totalValue);
                         document.getElementById('totalMetric').textContent = displayValue;
                         document.getElementById('totalMetric').title = `Total: ${totalValue.toFixed(4)}`;
                     } else {
-                        // Calculate total failures (original logic)
                         totalValue = data.reduce((sum, row) => {
                             const total = row.TOTAL_EXTRAFAILURES ?
                                 Math.max(0, Number(row.TOTAL_EXTRAFAILURES)) :
@@ -1022,7 +1156,6 @@
                             return sum + (isFinite(total) ? total : 0);
                         }, 0);
 
-                        // Count critical based on failure percentage
                         critical = data.filter(row => {
                             const rowTotal = row.TOTAL_EXTRAFAILURES ?
                                 Math.max(0, Number(row.TOTAL_EXTRAFAILURES)) :
@@ -1038,11 +1171,9 @@
 
                     document.getElementById('criticalOffenders').textContent = critical;
 
-                    // Count unique USIDs
                     const uniqueUsids = new Set(data.map(row => row.USID)).size;
                     document.getElementById('activeUsids').textContent = uniqueUsids;
 
-                    // Update change indicators
                     if (isShowingAllMetrics) {
                         document.getElementById('offenderChange').textContent = `${offenders.length} USIDs (all metrics)`;
                     } else {
@@ -1062,7 +1193,6 @@
                     console.log('✅ Statistics updated successfully');
                 } else {
                     console.log('⚠️ No data to update statistics');
-                    // Set default values for empty data
                     document.getElementById('totalOffenders').textContent = '0';
                     document.getElementById('totalMetric').textContent = '0';
                     document.getElementById('criticalOffenders').textContent = '0';
@@ -1070,7 +1200,6 @@
                 }
             } catch (error) {
                 console.error('❌ Error updating statistics:', error);
-                // Set default values on error
                 document.getElementById('totalOffenders').textContent = 'Error';
                 document.getElementById('totalMetric').textContent = 'Error';
                 document.getElementById('criticalOffenders').textContent = 'Error';
@@ -1082,17 +1211,14 @@
             const tbody = document.getElementById('tableBody');
             tbody.innerHTML = '';
 
-            // Get the selected sorting criteria
             const sortingCriteria = document.getElementById('sortingCriteria').value;
 
-            // Update table headers to show which column is being sorted
             const headers = document.querySelectorAll('#dataTable th');
             headers.forEach(th => {
                 th.style.backgroundColor = '#f7fafc';
                 th.style.fontWeight = '600';
             });
 
-            // Update sorting indicator
             const indicator = document.getElementById('sortingIndicator');
             if (sortingCriteria === 'contribution') {
                 headers[3].style.backgroundColor = '#e0e7ff';
@@ -1104,7 +1230,6 @@
                 indicator.textContent = '(by Total Failures - Highest First)';
             }
 
-            // Calculate total for dynamic severity based on selected criteria
             const datasetTotal = data.reduce((sum, row) => {
                 if (sortingCriteria === 'contribution') {
                     const contrib = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
@@ -1117,25 +1242,20 @@
                 }
             }, 0);
 
-            // Note: Data is already sorted from the backend based on ranking criteria
-            // We don't need to sort again here as the API returns properly sorted data
-            const sortedData = data.slice(0, 100); // Show top 100 offenders
+            const sortedData = data.slice(0, 100);
 
             sortedData.forEach((row, index) => {
                 const tr = document.createElement('tr');
 
-                // Get contribution values - use direct IDXCONTR value, not averages
                 const contribution = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
                 const totalContribution = Number(row.TOTAL_IDXCONTR) || contribution;
 
-                // Get failure values (set negative to 0)
                 const avgFailures = Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0);
                 const totalFailures = Math.max(0, Number(row.TOTAL_EXTRAFAILURES) || (avgFailures * (row.RECORD_COUNT || 1)));
 
                 const validAvg = isFinite(avgFailures) ? Math.round(avgFailures) : 0;
                 const validTotal = isFinite(totalFailures) ? Math.round(totalFailures) : 0;
 
-                // Calculate percentage for dynamic severity based on selected criteria
                 let percentageOfTotal;
                 if (sortingCriteria === 'contribution') {
                     percentageOfTotal = datasetTotal !== 0 ?
@@ -1145,7 +1265,6 @@
                         (validTotal / datasetTotal) * 100 : 0;
                 }
 
-                // Determine severity based on percentage
                 let severity, severityClass;
                 if (Math.abs(percentageOfTotal) >= 10) {
                     severity = 'CRITICAL';
@@ -1161,16 +1280,13 @@
                     severityClass = 'severity-low';
                 }
 
-                // Use display name if available
                 const metricDisplay = row.METRIC_DISPLAY || row.METRICNAME || '-';
 
-                // Format contribution with proper color: negative = red (worse), positive = green (better)
                 const contribColor = contribution < 0 ? '#ef4444' : '#22c55e';
                 const contribDisplay = formatContribution(contribution);
                 const contribTitle = `Contribution: ${contribution} | Total: ${totalContribution}`;
                 const contribCell = `<strong title="${contribTitle}" style="color: ${contribColor}">${contribDisplay}</strong>`;
 
-                // Create cell for total failures with compact numbers and tooltips
                 const totalFailuresCell = `<strong title="Total: ${formatFullNumber(validTotal)} failures">${formatCompactNumber(validTotal)}</strong>`;
 
                 tr.innerHTML = `
@@ -1189,10 +1305,16 @@
 
         function resetFilters() {
             document.getElementById('submarket').value = '';
-            document.getElementById('cqeCluster').value = '';
+            
+            // Reset multi-select clusters
+            const checkboxes = document.querySelectorAll('#cqeClusterDropdown input[type="checkbox"]');
+            checkboxes.forEach(cb => cb.checked = false);
+            selectedClusters = [];
+            updateSelectedClusters();
+            
             document.getElementById('metricName').value = '';
             document.getElementById('usid').value = '';
-            document.getElementById('sortingCriteria').value = 'contribution'; // Reset to default
+            document.getElementById('sortingCriteria').value = 'contribution';
             setDefaultDates();
             fetchData();
         }
@@ -1204,15 +1326,11 @@
             }
 
             const sortingCriteria = document.getElementById('sortingCriteria').value;
-
-            // Check if we're showing "All" metrics
             const isShowingAllMetrics = currentData.length > 0 &&
                 (currentData[0].METRIC_DISPLAY === 'All' || currentData[0].METRICNAME === 'ALL');
 
-            // Data is already sorted from backend, no need to sort again
             const sortedData = currentData;
 
-            // Add rank to each row
             const exportData = sortedData.map((row, index) => {
                 const contribution = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
                 const totalContribution = Number(row.TOTAL_IDXCONTR) || contribution;
@@ -1239,12 +1357,10 @@
                 };
             });
 
-            // Convert to CSV
             const headers = Object.keys(exportData[0]);
             const csvContent = [
                 headers.join(','),
                 ...exportData.map(row => headers.map(h => {
-                    // Properly escape CSV values
                     const value = String(row[h] || '');
                     return value.includes(',') || value.includes('"') || value.includes('\n')
                         ? `"${value.replace(/"/g, '""')}"`
@@ -1252,13 +1368,11 @@
                 }).join(','))
             ].join('\n');
 
-            // Download CSV
             const blob = new Blob([csvContent], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
 
-            // Name file based on aggregation type and sorting
             const sortType = sortingCriteria === 'contribution' ? 'contrib_worst_first' : 'failures_highest_first';
             const fileName = isShowingAllMetrics ?
                 `cqi_offenders_all_metrics_${sortType}_${new Date().toISOString().split('T')[0]}.csv` :

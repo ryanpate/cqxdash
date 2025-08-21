@@ -1,21 +1,21 @@
 """
-CQI Dashboard Flask API - Secured Version with Environment Variables
-Credentials are now stored in environment variables or .env file
+CQI Dashboard Flask API - Updated with Multi-Select CQE Clusters
+Supports multiple CQE Cluster selections in filters
 """
 
+from dotenv import load_dotenv  # For loading .env file
+import json
+import logging
+from functools import lru_cache
+import os
+from datetime import datetime, timedelta
+import numpy as np
+import pandas as pd
+import snowflake.connector as sc
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
-import snowflake.connector as sc
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-import os
-from functools import lru_cache
-import logging
-import json
-from dotenv import load_dotenv  # For loading .env file
 
 # Load environment variables from .env file if it exists
 load_dotenv()
@@ -335,18 +335,26 @@ def get_filter_options():
 
 @app.route('/api/data', methods=['GET'])
 def get_cqi_data():
-    """Get CQI data - aggregated by USID+METRICNAME"""
+    """Get CQI data - aggregated by USID+METRICNAME with multi-select CQE Clusters support"""
     try:
         # Get filter parameters
         submarket = request.args.get('submarket', '')
-        cqe_cluster = request.args.get('cqeCluster', '')
+        # Now accepts comma-separated values
+        cqe_clusters_str = request.args.get('cqeClusters', '')
         period_start = request.args.get('periodStart', '')
         period_end = request.args.get('periodEnd', '')
         metric_name = request.args.get('metricName', '')
         usid = request.args.get('usid', '')
         sorting_criteria = request.args.get('sortingCriteria', 'contribution')
 
+        # Parse multiple CQE clusters
+        cqe_clusters = []
+        if cqe_clusters_str:
+            cqe_clusters = [c.strip()
+                            for c in cqe_clusters_str.split(',') if c.strip()]
+
         logger.info(f"Data request with sorting: {sorting_criteria}")
+        logger.info(f"Selected CQE Clusters: {cqe_clusters}")
 
         # Define metric mapping
         metric_mapping = {
@@ -418,9 +426,10 @@ def get_cqi_data():
             query += " AND SUBMKT = %s"
             params.append(submarket)
 
-        if cqe_cluster:
-            query += " AND CQECLUSTER = %s"
-            params.append(cqe_cluster)
+        # Handle multiple CQE clusters
+        if cqe_clusters:
+            query += f" AND CQECLUSTER IN ({','.join(['%s'] * len(cqe_clusters))})"
+            params.extend(cqe_clusters)
 
         if period_start:
             query += " AND PERIODSTART >= %s"
@@ -716,7 +725,7 @@ def internal_error(error):
 
 
 if __name__ == '__main__':
-    print("🚀 Starting CQI Dashboard API Server (Secured)...")
+    print("🚀 Starting CQI Dashboard API Server (with Multi-Select Support)...")
 
     # Check configuration
     if validate_config():
@@ -736,6 +745,7 @@ if __name__ == '__main__':
         print("  SNOWFLAKE_PRIVATE_KEY_PASSPHRASE (if key is encrypted)")
 
     print("\n📡 API will be available at: http://localhost:5000")
+    print("✨ NEW FEATURE: Multi-select CQE Clusters now supported!")
     print("-" * 50)
 
     app.run(debug=False, host='0.0.0.0', port=5000)
