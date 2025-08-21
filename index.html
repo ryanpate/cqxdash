@@ -489,7 +489,7 @@
 
     <script>
         // API endpoint - Update this to your Flask server URL
-        const API_URL = 'http://cqxdashboard.web.att.com:5000/api';
+        const API_URL = 'http://localhost:5000/api';
 
         let currentData = [];
         let apiAvailable = false;
@@ -582,48 +582,37 @@
             });
         });
 
-    async function checkAPIConnection() {
-        try {
-            console.log('🔌 Checking API connection...');
-            console.log('API_URL is:', API_URL);
-            console.log('Full health URL:', `${API_URL}/health`);
+        async function checkAPIConnection() {
+            try {
+                console.log('🔌 Checking API connection...');
+                const response = await fetch(`${API_URL}/health`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
 
-            const response = await fetch(`${API_URL}/health`, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                mode: 'cors'
-            });
+                console.log('🔌 Health check response status:', response.status);
 
-            console.log('📌 Health check response status:', response.status);
-            console.log('📌 Response headers:', response.headers);
-
-            if (response.ok) {
-                const data = await response.json();
-                console.log('✅ API health check successful:', data);
-                apiAvailable = true;
-                showSuccessMessage('Connected to Snowflake API successfully!');
-                console.log('📋 Loading filter options...');
-                loadFilterOptions();
-                console.log('📊 Fetching initial data...');
-                fetchData();
-            } else {
-                console.error('❌ API health check failed with status:', response.status);
-                console.error('Response text:', await response.text());
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('✅ API health check successful:', data);
+                    apiAvailable = true;
+                    showSuccessMessage('Connected to Snowflake API successfully!');
+                    console.log('📋 Loading filter options...');
+                    loadFilterOptions();
+                    console.log('📊 Fetching initial data...');
+                    fetchData();
+                } else {
+                    console.error('❌ API health check failed with status:', response.status);
+                    handleAPIError();
+                }
+            } catch (error) {
+                console.error('❌ API connection error:', error);
                 handleAPIError();
             }
-        } catch (error) {
-            console.error('❌ API connection error - Full details:');
-            console.error('Error type:', error.name);
-            console.error('Error message:', error.message);
-            console.error('Error stack:', error.stack);
-            console.error('API_URL was:', API_URL);
-            console.error('Full URL attempted:', `${API_URL}/health`);
-            handleAPIError();
         }
-    }
+
         function handleAPIError() {
             console.log('🔄 Handling API error - switching to sample data');
             apiAvailable = false;
