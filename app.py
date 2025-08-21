@@ -5,6 +5,8 @@ Credentials are now stored in environment variables or .env file
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+app = Flask(__name__)
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 import snowflake.connector as sc
 import pandas as pd
 import numpy as np
@@ -17,9 +19,6 @@ from dotenv import load_dotenv  # For loading .env file
 
 # Load environment variables from .env file if it exists
 load_dotenv()
-
-app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
 
 # Configure logging
 logging.basicConfig(level=logging.WARNING)
