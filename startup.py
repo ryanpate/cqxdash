@@ -156,15 +156,15 @@ def main():
     time.sleep(1)
     
     # Open browser
-    dashboard_url = "http://localhost:8080/index.html"
-    print(f"\n🌐 Opening dashboard in browser: {dashboard_url}")
-    webbrowser.open(dashboard_url)
+    # dashboard_url = "http://localhost:8000/index.html"
+    # print(f"\n🌐 Opening dashboard in browser: {dashboard_url}")
+    # webbrowser.open(dashboard_url)
     
     # Print success message
     print("\n" + "=" * 60)
     print("✨ CQI DASHBOARD IS RUNNING!")
     print("=" * 60)
-    print("\n📊 Dashboard URL: http://localhost:8080/index.html")
+    print("\n📊 Dashboard URL: http://localhost:8000/index.html")
     print("🔧 API Endpoint: http://localhost:5000/api")
     print("\n🎯 Key Features:")
     print("  • Initial load shows top offenders by Contribution (IDXCONTR)")
