@@ -245,57 +245,6 @@
             background: #edf2f7;
         }
 
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .stat-card {
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-            transition: transform 0.3s ease;
-        }
-
-        .stat-card:hover {
-            transform: translateY(-5px);
-        }
-
-        .stat-card h3 {
-            color: #718096;
-            font-size: 0.9rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 10px;
-        }
-
-        .stat-card .value {
-            color: #2d3748;
-            font-size: 2rem;
-            font-weight: 700;
-            cursor: help;
-        }
-
-        .stat-card .value[title] {
-            border-bottom: 2px dotted #667eea;
-        }
-
-        .stat-card .change {
-            margin-top: 5px;
-            font-size: 0.9rem;
-        }
-
-        .change.positive {
-            color: #48bb78;
-        }
-
-        .change.negative {
-            color: #f56565;
-        }
-
         .data-section {
             background: white;
             border-radius: 15px;
@@ -531,28 +480,7 @@
             </div>
         </div>
 
-        <div class="stats-grid">
-            <div class="stat-card">
-                <h3>Total Entries</h3>
-                <div class="value" id="totalOffenders">0</div>
-                <div class="change negative" id="offenderChange">Loading...</div>
-            </div>
-            <div class="stat-card">
-                <h3 id="totalMetricLabel">Total Contribution</h3>
-                <div class="value" id="totalMetric">0</div>
-                <div class="change negative" id="metricChange">Loading...</div>
-            </div>
-            <div class="stat-card">
-                <h3>Critical Offenders</h3>
-                <div class="value" id="criticalOffenders">0</div>
-                <div class="change negative" id="criticalChange">≥5% of total</div>
-            </div>
-            <div class="stat-card">
-                <h3>Unique USIDs</h3>
-                <div class="value" id="activeUsids">0</div>
-                <div class="change positive" id="usidChange">Loading...</div>
-            </div>
-        </div>
+
 
         <div class="data-section">
             <div class="section-header">
@@ -1105,7 +1033,6 @@
                 console.log(`📊 Processing ${data.length} records`);
                 hideLoading();
 
-                updateStats(data);
                 updateTable(data);
 
                 console.log('✅ Dashboard update complete');
@@ -1113,131 +1040,6 @@
                 console.error('❌ Error updating dashboard:', error);
                 showErrorMessage(`Error updating dashboard: ${error.message}`);
                 hideLoading();
-            }
-        }
-
-        function updateStats(data) {
-            try {
-                console.log('📈 Updating statistics...');
-
-                const sortingCriteria = document.getElementById('sortingCriteria').value;
-
-                if (sortingCriteria === 'contribution') {
-                    document.getElementById('totalMetricLabel').textContent = 'Total Contribution';
-                } else {
-                    document.getElementById('totalMetricLabel').textContent = 'Total Extra Failures';
-                }
-
-                const isShowingAllMetrics = data.length > 0 && (data[0].METRIC_DISPLAY === 'All' || data[0].METRICNAME === 'ALL');
-
-                const offenders = data.filter(row => {
-                    if (sortingCriteria === 'contribution') {
-                        const contrib = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
-                        return contrib !== 0;
-                    } else {
-                        const avgFailures = Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0);
-                        return isFinite(avgFailures) && avgFailures > 0;
-                    }
-                });
-
-                console.log(`📊 Found ${offenders.length} offenders out of ${data.length} records`);
-                document.getElementById('totalOffenders').textContent = offenders.length;
-
-                if (data.length > 0) {
-                    let totalValue = 0;
-                    let critical = 0;
-
-                    if (sortingCriteria === 'contribution') {
-                        // Calculate total contribution for display (can be negative)
-                        totalValue = data.reduce((sum, row) => {
-                            const contrib = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
-                            const total = row.TOTAL_IDXCONTR ?
-                                Number(row.TOTAL_IDXCONTR) :
-                                contrib * (row.RECORD_COUNT || 1);
-                            return sum + total;
-                        }, 0);
-
-                        // Calculate absolute total for percentage calculations
-                        const absoluteTotal = data.reduce((sum, row) => {
-                            const contrib = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
-                            const total = row.TOTAL_IDXCONTR ?
-                                Number(row.TOTAL_IDXCONTR) :
-                                contrib * (row.RECORD_COUNT || 1);
-                            return sum + Math.abs(total);
-                        }, 0);
-
-                        // Count critical based on percentage of absolute total
-                        critical = data.filter(row => {
-                            const contrib = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
-                            const rowTotal = row.TOTAL_IDXCONTR ?
-                                Number(row.TOTAL_IDXCONTR) :
-                                contrib * (row.RECORD_COUNT || 1);
-                            const percentageOfTotal = absoluteTotal !== 0 ?
-                                (Math.abs(rowTotal) / absoluteTotal) * 100 : 0;
-                            return percentageOfTotal >= 5;
-                        }).length;
-
-                        console.log(`⚠️ Critical offenders (≥5% of absolute total): ${critical}`);
-
-                        const displayValue = formatContribution(totalValue);
-                        document.getElementById('totalMetric').textContent = displayValue;
-                        document.getElementById('totalMetric').title = `Total: ${totalValue.toFixed(4)}`;
-                    } else {
-                        totalValue = data.reduce((sum, row) => {
-                            const total = row.TOTAL_EXTRAFAILURES ?
-                                Math.max(0, Number(row.TOTAL_EXTRAFAILURES)) :
-                                Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0) * (row.RECORD_COUNT || 1);
-                            return sum + (isFinite(total) ? total : 0);
-                        }, 0);
-
-                        critical = data.filter(row => {
-                            const rowTotal = row.TOTAL_EXTRAFAILURES ?
-                                Math.max(0, Number(row.TOTAL_EXTRAFAILURES)) :
-                                Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0) * (row.RECORD_COUNT || 1);
-                            const validTotal = isFinite(rowTotal) ? rowTotal : 0;
-                            const percentageOfTotal = totalValue > 0 ? (validTotal / totalValue) * 100 : 0;
-                            return percentageOfTotal >= 5;
-                        }).length;
-
-                        document.getElementById('totalMetric').textContent = formatCompactNumber(totalValue);
-                        document.getElementById('totalMetric').title = `Total: ${formatFullNumber(totalValue)}`;
-                    }
-
-                    document.getElementById('criticalOffenders').textContent = critical;
-
-                    const uniqueUsids = new Set(data.map(row => row.USID)).size;
-                    document.getElementById('activeUsids').textContent = uniqueUsids;
-
-                    if (isShowingAllMetrics) {
-                        document.getElementById('offenderChange').textContent = `${offenders.length} USIDs (all metrics)`;
-                    } else {
-                        document.getElementById('offenderChange').textContent = `${offenders.length} USID+Metric pairs`;
-                    }
-
-                    const avgPerEntry = totalValue / data.length;
-                    const metricType = sortingCriteria === 'contribution' ? 'contribution' : 'failures';
-                    if (sortingCriteria === 'contribution') {
-                        document.getElementById('metricChange').textContent = `Avg: ${formatContribution(avgPerEntry)} per entry`;
-                    } else {
-                        document.getElementById('metricChange').textContent = `Avg: ${formatCompactNumber(avgPerEntry)} per entry`;
-                    }
-                    document.getElementById('criticalChange').textContent = `≥5% of total ${metricType}`;
-                    document.getElementById('usidChange').textContent = `${uniqueUsids} unique sites`;
-
-                    console.log('✅ Statistics updated successfully');
-                } else {
-                    console.log('⚠️ No data to update statistics');
-                    document.getElementById('totalOffenders').textContent = '0';
-                    document.getElementById('totalMetric').textContent = '0';
-                    document.getElementById('criticalOffenders').textContent = '0';
-                    document.getElementById('activeUsids').textContent = '0';
-                }
-            } catch (error) {
-                console.error('❌ Error updating statistics:', error);
-                document.getElementById('totalOffenders').textContent = 'Error';
-                document.getElementById('totalMetric').textContent = 'Error';
-                document.getElementById('criticalOffenders').textContent = 'Error';
-                document.getElementById('activeUsids').textContent = 'Error';
             }
         }
 
