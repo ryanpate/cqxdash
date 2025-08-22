@@ -237,6 +237,12 @@
 
         .active-filters-container {
             margin: 15px 0;
+            min-height: 0;
+            display: none;
+        }
+
+        .active-filters-container.has-filters {
+            display: block;
             min-height: 30px;
         }
 
@@ -789,14 +795,17 @@
                 const container = document.getElementById('activeFiltersContainer');
                 container.innerHTML = '';
 
-                // Show selected clusters as badges
+                // Show selected clusters as badges only if specific clusters are selected (not all)
                 if (selectedClusters.length > 0 && selectedClusters.length < document.querySelectorAll('#cqeClusterDropdown input[type="checkbox"]:not(#selectAllClusters)').length) {
+                    container.classList.add('has-filters');
                     selectedClusters.forEach(cluster => {
                         const badge = document.createElement('span');
                         badge.className = 'active-filter-badge';
                         badge.innerHTML = `CQE: ${cluster} <span class="close-btn" onclick="removeClusterFilter('${cluster}')">×</span>`;
                         container.appendChild(badge);
                     });
+                } else {
+                    container.classList.remove('has-filters');
                 }
             }
 
@@ -1306,14 +1315,21 @@
 
                     // Calculate severity value for sorting
                     let severityValue;
-                    if (Math.abs(percentageOfTotal) >= 5) {
-                        severityValue = 4;
-                    } else if (Math.abs(percentageOfTotal) >= 2.5) {
-                        severityValue = 3;
-                    } else if (Math.abs(percentageOfTotal) >= 0.5) {
-                        severityValue = 2;
+
+                    // If contribution is positive (good performance), always set severity to LOW
+                    if (contribution >= 0) {
+                        severityValue = 1; // LOW
                     } else {
-                        severityValue = 1;
+                        // For negative contributions (poor performance), use percentage-based severity
+                        if (Math.abs(percentageOfTotal) >= 5) {
+                            severityValue = 4;
+                        } else if (Math.abs(percentageOfTotal) >= 2.5) {
+                            severityValue = 3;
+                        } else if (Math.abs(percentageOfTotal) >= 0.5) {
+                            severityValue = 2;
+                        } else {
+                            severityValue = 1;
+                        }
                     }
 
                     return {
@@ -1363,18 +1379,26 @@
                     const validTotal = isFinite(totalFailures) ? Math.round(totalFailures) : 0;
 
                     let severity, severityClass;
-                    if (row.severityValue === 4) {
-                        severity = 'CRITICAL';
-                        severityClass = 'severity-high';
-                    } else if (row.severityValue === 3) {
-                        severity = 'HIGH';
-                        severityClass = 'severity-high';
-                    } else if (row.severityValue === 2) {
-                        severity = 'MEDIUM';
-                        severityClass = 'severity-medium';
-                    } else {
+
+                    // If contribution is positive (good performance), always set severity to LOW
+                    if (contribution >= 0) {
                         severity = 'LOW';
                         severityClass = 'severity-low';
+                    } else {
+                        // For negative contributions (poor performance), use the calculated severity
+                        if (row.severityValue === 4) {
+                            severity = 'CRITICAL';
+                            severityClass = 'severity-high';
+                        } else if (row.severityValue === 3) {
+                            severity = 'HIGH';
+                            severityClass = 'severity-high';
+                        } else if (row.severityValue === 2) {
+                            severity = 'MEDIUM';
+                            severityClass = 'severity-medium';
+                        } else {
+                            severity = 'LOW';
+                            severityClass = 'severity-low';
+                        }
                     }
 
                     const metricDisplay = row.METRIC_DISPLAY || row.METRICNAME || '-';
