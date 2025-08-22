@@ -562,7 +562,7 @@
             </div>
 
             <div class="info-note">
-                <strong>🔄 Fresh Data on Ranking Change:</strong> When you switch between Contribution and
+                <strong>🔄 Fresh Data on Ranking Change:</strong> When you switch between Contribution (IDXCONTR) and
                 Extra Failures ranking, the dashboard automatically fetches fresh data from Snowflake because these
                 metrics don't directly correlate for top offenders.<br><br>
                 <strong>📊 Multi-Select CQE Clusters:</strong> You can now select multiple CQE Clusters to filter data.
@@ -1148,6 +1148,7 @@
                     let critical = 0;
 
                     if (sortingCriteria === 'contribution') {
+                        // Calculate total contribution for display (can be negative)
                         totalValue = data.reduce((sum, row) => {
                             const contrib = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
                             const total = row.TOTAL_IDXCONTR ?
@@ -1156,15 +1157,27 @@
                             return sum + total;
                         }, 0);
 
+                        // Calculate absolute total for percentage calculations
+                        const absoluteTotal = data.reduce((sum, row) => {
+                            const contrib = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
+                            const total = row.TOTAL_IDXCONTR ?
+                                Number(row.TOTAL_IDXCONTR) :
+                                contrib * (row.RECORD_COUNT || 1);
+                            return sum + Math.abs(total);
+                        }, 0);
+
+                        // Count critical based on percentage of absolute total
                         critical = data.filter(row => {
                             const contrib = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
                             const rowTotal = row.TOTAL_IDXCONTR ?
                                 Number(row.TOTAL_IDXCONTR) :
                                 contrib * (row.RECORD_COUNT || 1);
-                            const percentageOfTotal = totalValue !== 0 ?
-                                Math.abs(rowTotal / totalValue) * 100 : 0;
+                            const percentageOfTotal = absoluteTotal !== 0 ?
+                                (Math.abs(rowTotal) / absoluteTotal) * 100 : 0;
                             return percentageOfTotal >= 10;
                         }).length;
+
+                        console.log(`⚠️ Critical offenders (≥10% of absolute total): ${critical}`);
 
                         const displayValue = formatContribution(totalValue);
                         document.getElementById('totalMetric').textContent = displayValue;
@@ -1251,17 +1264,26 @@
                 indicator.textContent = '(by Total Failures - Highest First)';
             }
 
-            const datasetTotal = data.reduce((sum, row) => {
-                if (sortingCriteria === 'contribution') {
+            // Calculate total for dynamic severity based on selected criteria
+            let datasetTotal = 0;
+            if (sortingCriteria === 'contribution') {
+                // Use absolute values for percentage calculation in contribution mode
+                datasetTotal = data.reduce((sum, row) => {
                     const contrib = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
-                    return sum + contrib;
-                } else {
+                    const total = row.TOTAL_IDXCONTR ?
+                        Number(row.TOTAL_IDXCONTR) :
+                        contrib * (row.RECORD_COUNT || 1);
+                    return sum + Math.abs(total);
+                }, 0);
+            } else {
+                // Regular total for failures
+                datasetTotal = data.reduce((sum, row) => {
                     const total = row.TOTAL_EXTRAFAILURES ?
                         Math.max(0, Number(row.TOTAL_EXTRAFAILURES)) :
                         Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0) * (row.RECORD_COUNT || 1);
                     return sum + (isFinite(total) ? total : 0);
-                }
-            }, 0);
+                }, 0);
+            }
 
             const sortedData = data.slice(0, 100);
 
@@ -1269,7 +1291,7 @@
                 const tr = document.createElement('tr');
 
                 const contribution = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
-                const totalContribution = Number(row.TOTAL_IDXCONTR) || contribution;
+                const totalContribution = Number(row.TOTAL_IDXCONTR) || (contribution * (row.RECORD_COUNT || 1));
 
                 const avgFailures = Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0);
                 const totalFailures = Math.max(0, Number(row.TOTAL_EXTRAFAILURES) || (avgFailures * (row.RECORD_COUNT || 1)));
@@ -1279,8 +1301,9 @@
 
                 let percentageOfTotal;
                 if (sortingCriteria === 'contribution') {
+                    // Use absolute value for percentage calculation
                     percentageOfTotal = datasetTotal !== 0 ?
-                        (totalContribution / datasetTotal) * 100 : 0;
+                        (Math.abs(totalContribution) / datasetTotal) * 100 : 0;
                 } else {
                     percentageOfTotal = datasetTotal > 0 ?
                         (validTotal / datasetTotal) * 100 : 0;
