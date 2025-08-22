@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CQI Offenders Dashboard - CQX Metrics</title>
+    <title>CQX Offenders Dashboard</title>
     <style>
         * {
             margin: 0;
@@ -469,8 +469,8 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>CQI Offenders Dashboard - Extra Failures & Contribution Tracking</h1>
-            <p>Network failures and contribution (IDXCONTR) aggregated by USID</p>
+            <h1>CQX Offenders Dashboard - Extra Failures & Contribution Tracking</h1>
+            <p>CQX Failures and Contribution aggregated by USID</p>
         </div>
 
         <div class="filters-section">
@@ -483,7 +483,7 @@
                     </select>
                 </div>
                 <div class="filter-group">
-                    <label for="cqeCluster">CQE Cluster <span id="clusterCount" class="selected-count"
+                    <label for="cqeCluster">CQX Cluster <span id="clusterCount" class="selected-count"
                             style="display: none;">0</span></label>
                     <div class="multi-select-container">
                         <div class="multi-select-input" id="cqeClusterInput">
@@ -517,9 +517,9 @@
                     <input type="text" id="usid" placeholder="Enter USID + Enter for details">
                 </div>
                 <div class="filter-group">
-                    <label for="sortingCriteria">⭐ Ranking Criteria</label>
+                    <label for="sortingCriteria">Ranking Criteria</label>
                     <select id="sortingCriteria">
-                        <option value="contribution" selected>Contribution (IDXCONTR)</option>
+                        <option value="contribution" selected>Total Contribution</option>
                         <option value="failures">Extra Failures</option>
                     </select>
                 </div>
@@ -562,10 +562,10 @@
             </div>
 
             <div class="info-note">
-                <strong>🔄 Fresh Data on Ranking Change:</strong> When you switch between Contribution (IDXCONTR) and
+                <strong>🔄 Fresh Data on Ranking Change:</strong> When you switch between Contribution and
                 Extra Failures ranking, the dashboard automatically fetches fresh data from Snowflake because these
                 metrics don't directly correlate for top offenders.<br><br>
-                <strong>📊 Multi-Select CQE Clusters:</strong> You can now select multiple CQE Clusters to filter data.
+                <strong>📊 Multi-Select CQE Clusters:</strong> You can select multiple CQE Clusters to filter data.
                 Click the dropdown and check multiple options, or use "Select All" to choose all clusters at once.<br>
                 <strong>🔍 Quick USID Lookup:</strong> Enter a USID in the filter field and click "Apply Filters" (or
                 press Enter) to open its detail page in a new tab.<br>
