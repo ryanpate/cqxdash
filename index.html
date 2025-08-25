@@ -637,7 +637,7 @@
                 });
             }
 
-            // Handle submarket change event - UPDATED FUNCTION
+            // Handle submarket change event - Using CSV-based mapping
             function handleSubmarketChange(submarket) {
                 console.log('🏙️ Submarket changed to:', submarket || 'All');
 
@@ -659,15 +659,29 @@
 
                     // Repopulate with all clusters
                     populateMultiSelect('cqeCluster', allClusters);
+
+                    console.log('📍 Showing all clusters:', allClusters.length);
                 } else {
-                    // Get clusters for selected submarket from the already loaded data
-                    currentSubmarketClusters = submarketClusters[submarket] || [];
+                    // Check if we have CSV mapping for this submarket
+                    if (submarketClusters && submarketClusters[submarket] && submarketClusters[submarket].length > 0) {
+                        // Use CSV mapping for this submarket
+                        currentSubmarketClusters = submarketClusters[submarket];
+                        console.log(`📍 Found ${currentSubmarketClusters.length} clusters for ${submarket} in CSV mapping`);
 
-                    document.getElementById('clusterFilterInfo').style.display = 'inline-block';
-                    document.getElementById('clusterFilterInfo').textContent = `${currentSubmarketClusters.length} available`;
-                    document.getElementById('cqeClusterInput').classList.add('filtered');
+                        document.getElementById('clusterFilterInfo').style.display = 'inline-block';
+                        document.getElementById('clusterFilterInfo').textContent = `${currentSubmarketClusters.length} available`;
+                        document.getElementById('cqeClusterInput').classList.add('filtered');
+                    } else {
+                        // No CSV mapping for this submarket - show ALL clusters
+                        currentSubmarketClusters = allClusters;
+                        console.log(`⚠️ No CSV mapping for ${submarket}, showing all ${allClusters.length} clusters`);
 
-                    // Repopulate with filtered clusters
+                        document.getElementById('clusterFilterInfo').style.display = 'inline-block';
+                        document.getElementById('clusterFilterInfo').textContent = 'All (no mapping)';
+                        document.getElementById('cqeClusterInput').classList.remove('filtered');
+                    }
+
+                    // Repopulate with appropriate clusters
                     populateMultiSelect('cqeCluster', currentSubmarketClusters);
                 }
 
@@ -678,7 +692,7 @@
                 // Update the display
                 updateSelectedClusters();
 
-                console.log(`📍 Available clusters: ${currentSubmarketClusters.length}`, currentSubmarketClusters);
+                console.log(`📊 Current available clusters:`, currentSubmarketClusters);
             }
 
             // Update selected clusters array and display

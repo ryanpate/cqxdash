@@ -387,53 +387,32 @@ def get_filter_options():
         cur.close()
         conn.close()
 
-        # Load the CSV mapping
+        # Load the CSV mapping for filtering purposes only
         csv_mapping = load_submarket_cluster_mapping()
 
-        # If CSV mapping exists, use it; otherwise fall back to database relationships
+        # ALWAYS use ALL submarkets and clusters from the database for initial display
+        filters['submarkets'] = db_submarkets
+        filters['cqeClusters'] = db_clusters
+
+        # Store the CSV mapping for frontend filtering when a submarket is selected
         if csv_mapping:
-            # Use submarkets from CSV that also exist in the database
-            csv_submarkets = set(csv_mapping.keys())
-            db_submarkets_set = set(db_submarkets)
-
-            # Intersection of CSV and database submarkets
-            filters['submarkets'] = sorted(
-                list(csv_submarkets & db_submarkets_set))
-
-            # Log any mismatches for debugging
-            csv_only = csv_submarkets - db_submarkets_set
-            db_only = db_submarkets_set - csv_submarkets
-
-            if csv_only:
-                logger.warning(
-                    f"Submarkets in CSV but not in database: {csv_only}")
-            if db_only:
-                logger.warning(
-                    f"Submarkets in database but not in CSV: {db_only}")
-
-            # Get all unique clusters from the CSV mapping
-            all_csv_clusters = set()
-            for clusters in csv_mapping.values():
-                all_csv_clusters.update(clusters)
-
-            # Use clusters that exist in both CSV and database
-            db_clusters_set = set(db_clusters)
-            filters['cqeClusters'] = sorted(
-                list(all_csv_clusters & db_clusters_set))
-
-            # Store the mapping for the frontend
             filters['submarketClusters'] = csv_mapping
-
             logger.info(
-                f"Using CSV mapping: {len(filters['submarkets'])} submarkets, {len(filters['cqeClusters'])} clusters")
-        else:
-            # Fall back to database values if no CSV mapping
-            filters['submarkets'] = db_submarkets
-            filters['cqeClusters'] = db_clusters
-            filters['submarketClusters'] = {}
+                f"CSV mapping loaded: {len(csv_mapping)} submarkets with cluster relationships")
 
-            logger.warning(
-                "No CSV mapping available, using all database values")
+            # Log any submarkets that are in database but not in CSV as info
+            db_submarkets_set = set(db_submarkets)
+            csv_submarkets = set(csv_mapping.keys())
+            unmapped_submarkets = db_submarkets_set - csv_submarkets
+
+            if unmapped_submarkets:
+                logger.info(
+                    f"Submarkets without CSV mapping (will show all clusters): {unmapped_submarkets}")
+        else:
+            # Empty mapping if no CSV file
+            filters['submarketClusters'] = {}
+            logger.info(
+                "No CSV mapping file found - all clusters will be available for all submarkets")
 
         # Return the display names for metrics
         filters['metricNames'] = list(metric_mapping.values())
