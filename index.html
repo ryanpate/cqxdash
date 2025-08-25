@@ -399,6 +399,21 @@
             text-decoration: underline;
         }
 
+        .district-badge {
+            background: #e0e7ff;
+            color: #3730a3;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            display: inline-block;
+        }
+
+        .district-badge.no-data {
+            background: #f3f4f6;
+            color: #9ca3af;
+        }
+
         tr:hover {
             background: #f7fafc;
         }
@@ -492,6 +507,17 @@
             margin-left: 10px;
             font-weight: 600;
         }
+
+        .district-info {
+            display: inline-block;
+            background: #e0e7ff;
+            color: #3730a3;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            margin-left: 10px;
+            font-weight: 600;
+        }
     </style>
 </head>
 
@@ -565,12 +591,15 @@
             <div class="section-header">
                 <h2>Top Offenders <span id="sortingIndicator" style="font-size: 0.8em; color: #667eea;">(by
                         Contribution)</span> <span id="freshDataIndicator" class="fresh-data-indicator"
-                        style="display: none;">Fresh Data</span></h2>
+                        style="display: none;">Fresh Data</span>
+                    <span id="districtIndicator" class="district-info" style="display: none;">District Data Available</span>
+                </h2>
             </div>
 
             <div class="info-note">
                 <strong>🔄 Cascading Filters:</strong> When you select a Submarket, the CQE Cluster dropdown
                 automatically updates to show only clusters within that submarket.<br><br>
+                <strong>📍 District Column:</strong> When a Submarket is selected, the District column appears showing district information from the corresponding CSV file.<br>
                 <strong>📊 Multi-Select CQE Clusters:</strong> You can select multiple CQE Clusters to filter data. The
                 clusters shown depend on your selected submarket.<br>
                 <strong>🔍 Quick USID Lookup:</strong> Enter a USID in the filter field and press Enter to open its
@@ -588,7 +617,7 @@
                 <div class="table-container" style="display: none;">
                     <table id="dataTable">
                         <thead>
-                            <tr>
+                            <tr id="tableHeaders">
                                 <th>Rank</th>
                                 <th>USID</th>
                                 <th>Metric Name</th>
@@ -596,6 +625,7 @@
                                 <th>Total Failures</th>
                                 <th>Vendor</th>
                                 <th>CQE Cluster</th>
+                                <th id="districtHeader" style="display: none;">District</th>
                                 <th>Severity</th>
                             </tr>
                         </thead>
@@ -621,6 +651,7 @@
         let currentSubmarketClusters = [];
         let currentSort = { column: null, direction: 'asc' };
         let columnFilters = {};
+        let showDistrict = false;
 
         // Utility functions for number formatting
         function formatCompactNumber(num) {
@@ -709,7 +740,26 @@
             // Add submarket change listener for cascading filter
             document.getElementById('submarket').addEventListener('change', function () {
                 handleSubmarketChange(this.value);
+                updateDistrictVisibility(this.value);
             });
+        }
+
+        // Update district column visibility
+        function updateDistrictVisibility(submarket) {
+            const districtHeader = document.getElementById('districtHeader');
+            const districtIndicator = document.getElementById('districtIndicator');
+            
+            if (submarket && submarket !== '') {
+                showDistrict = true;
+                districtHeader.style.display = '';
+                districtIndicator.style.display = 'inline-block';
+                console.log('📍 District column enabled for submarket:', submarket);
+            } else {
+                showDistrict = false;
+                districtHeader.style.display = 'none';
+                districtIndicator.style.display = 'none';
+                console.log('📍 District column hidden - no submarket selected');
+            }
         }
 
         // Handle submarket change event - Using CSV-based mapping
@@ -858,7 +908,7 @@
 
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', function () {
-            console.log('🚀 Dashboard initializing with cascading filters...');
+            console.log('🚀 Dashboard initializing with cascading filters and district support...');
             setDefaultDates();
             initializeMultiSelect();
             checkAPIConnection();
@@ -970,7 +1020,7 @@
                         console.log('🔧 Metric mapping stored:', Object.keys(metricMapping).length, 'metrics');
                     }
 
-                    // Store submarket-cluster relationships - THIS IS THE KEY PART
+                    // Store submarket-cluster relationships
                     if (data.submarketClusters) {
                         submarketClusters = data.submarketClusters;
                         console.log('🏙️ Submarket-cluster relationships loaded:', Object.keys(submarketClusters).length, 'submarkets');
@@ -1018,9 +1068,10 @@
         async function fetchData() {
             const sortingCriteria = document.getElementById('sortingCriteria').value;
             const clusterValues = selectedClusters.length > 0 ? selectedClusters.join(',') : '';
+            const submarket = document.getElementById('submarket').value;
 
             const filters = {
-                submarket: document.getElementById('submarket').value,
+                submarket: submarket,
                 cqeClusters: clusterValues,
                 periodStart: document.getElementById('periodStart').value,
                 periodEnd: document.getElementById('periodEnd').value,
@@ -1032,6 +1083,7 @@
             console.log('🔄 Starting fetchData with filters:', filters);
             console.log('📊 Ranking criteria:', sortingCriteria);
             console.log('📍 Selected clusters:', selectedClusters);
+            console.log('📍 District data:', submarket ? 'Will be loaded' : 'Not applicable');
             showLoading();
 
             if (!apiAvailable) {
@@ -1068,6 +1120,12 @@
                         if (Array.isArray(data)) {
                             console.log(`📈 Data is array with ${data.length} records`);
                             console.log(`🎯 Data is sorted by ${sortingCriteria} at the database level`);
+                            
+                            // Check if district data is present
+                            if (data.length > 0 && data[0].DISTRICT !== undefined) {
+                                console.log('📍 District data found in response');
+                            }
+                            
                             if (data.length > 0) {
                                 console.log('🔍 First record keys:', Object.keys(data[0]));
                             }
@@ -1114,6 +1172,7 @@
             const vendors = ['Nokia', 'Ericsson', 'Huawei', 'Samsung'];
             const clusters = ['CQE_EAST', 'CQE_WEST', 'CQE_CENTRAL', 'CQE_SOUTH', 'CQE_NORTH'];
             const submarkets = ['NYC', 'LA', 'Chicago', 'Houston', 'Phoenix'];
+            const districts = ['86A', '86B', '86C', '86D', '86E', '86F', '86G', '86H'];
 
             // Sample submarket-cluster relationships for demo
             submarketClusters = {
@@ -1138,7 +1197,7 @@
 
             if (!selectedMetric) {
                 for (let i = 0; i < 50; i++) {
-                    const usid = `US${10000 + i}`;
+                    const usid = `${10000 + i}`;
 
                     let avgFailures;
                     const rand = Math.random();
@@ -1173,6 +1232,7 @@
                         VENDOR: vendors[Math.floor(Math.random() * vendors.length)],
                         CQECLUSTER: filteredClusters[Math.floor(Math.random() * filteredClusters.length)],
                         SUBMKT: selectedSubmarket || submarkets[Math.floor(Math.random() * submarkets.length)],
+                        DISTRICT: selectedSubmarket ? districts[Math.floor(Math.random() * districts.length)] : null,
                         EARLIEST_PERIOD: new Date(Date.now() - recordCount * 24 * 60 * 60 * 1000).toISOString(),
                         LATEST_PERIOD: new Date().toISOString()
                     });
@@ -1218,267 +1278,6 @@
                 showErrorMessage(`Error updating dashboard: ${error.message}`);
                 hideLoading();
             }
-        }
-
-        // Sort data by column
-        function sortData(column, direction) {
-            displayData.sort((a, b) => {
-                let aVal = a[column];
-                let bVal = b[column];
-
-                // Handle numeric columns
-                if (column === 'IDXCONTR' || column === 'AVG_IDXCONTR' || 
-                    column === 'TOTAL_EXTRAFAILURES' || column === 'EXTRAFAILURES' ||
-                    column === 'RECORD_COUNT') {
-                    aVal = Number(aVal) || 0;
-                    bVal = Number(bVal) || 0;
-                } 
-                // Handle string columns
-                else if (typeof aVal === 'string') {
-                    aVal = aVal.toLowerCase();
-                    bVal = bVal ? bVal.toLowerCase() : '';
-                }
-
-                if (direction === 'asc') {
-                    return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
-                } else {
-                    return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
-                }
-            });
-
-            currentSort = { column, direction };
-            updateTable(displayData);
-        }
-
-        // Filter data by column values
-        function filterData() {
-            displayData = [...currentData];
-
-            // Apply filters
-            Object.keys(columnFilters).forEach(column => {
-                const filterValues = columnFilters[column];
-                if (filterValues && filterValues.length > 0) {
-                    displayData = displayData.filter(row => {
-                        const value = row[column] || '';
-                        return filterValues.includes(value.toString());
-                    });
-                }
-            });
-
-            // Reapply current sort if exists
-            if (currentSort.column) {
-                sortData(currentSort.column, currentSort.direction);
-            } else {
-                updateTable(displayData);
-            }
-        }
-
-        // Create sort/filter menu for a column
-        function createSortMenu(column, columnIndex, uniqueValues) {
-            const menu = document.createElement('div');
-            menu.className = 'sort-menu';
-            menu.id = `sort-menu-${columnIndex}`;
-
-            // Sort options
-            const sortHeader = document.createElement('div');
-            sortHeader.className = 'sort-menu-header';
-            sortHeader.textContent = 'Sort';
-            menu.appendChild(sortHeader);
-
-            const ascItem = document.createElement('div');
-            ascItem.className = 'sort-menu-item';
-            ascItem.textContent = '↑ Ascending';
-            ascItem.onclick = (e) => {
-                e.stopPropagation();
-                sortData(column, 'asc');
-                closeAllSortMenus();
-                document.querySelectorAll('th').forEach(th => th.classList.remove('sorted-asc', 'sorted-desc'));
-                document.querySelector(`th:nth-child(${columnIndex + 1})`).classList.add('sorted-asc');
-            };
-            menu.appendChild(ascItem);
-
-            const descItem = document.createElement('div');
-            descItem.className = 'sort-menu-item';
-            descItem.textContent = '↓ Descending';
-            descItem.onclick = (e) => {
-                e.stopPropagation();
-                sortData(column, 'desc');
-                closeAllSortMenus();
-                document.querySelectorAll('th').forEach(th => th.classList.remove('sorted-asc', 'sorted-desc'));
-                document.querySelector(`th:nth-child(${columnIndex + 1})`).classList.add('sorted-desc');
-            };
-            menu.appendChild(descItem);
-
-            // Add filter options if there are unique values
-            if (uniqueValues && uniqueValues.length > 0 && uniqueValues.length <= 20) {
-                const divider = document.createElement('div');
-                divider.className = 'sort-menu-divider';
-                menu.appendChild(divider);
-
-                const filterHeader = document.createElement('div');
-                filterHeader.className = 'sort-menu-header';
-                filterHeader.textContent = 'Filter';
-                menu.appendChild(filterHeader);
-
-                uniqueValues.forEach(value => {
-                    const filterItem = document.createElement('div');
-                    filterItem.className = 'sort-menu-item';
-                    
-                    const checkbox = document.createElement('input');
-                    checkbox.type = 'checkbox';
-                    checkbox.className = 'filter-checkbox';
-                    checkbox.value = value;
-                    checkbox.checked = !columnFilters[column] || columnFilters[column].length === 0 || 
-                                      columnFilters[column].includes(value.toString());
-                    
-                    checkbox.onclick = (e) => {
-                        e.stopPropagation();
-                        
-                        if (!columnFilters[column]) {
-                            columnFilters[column] = [];
-                        }
-
-                        if (checkbox.checked) {
-                            // Add to filter
-                            if (!columnFilters[column].includes(value.toString())) {
-                                columnFilters[column].push(value.toString());
-                            }
-                        } else {
-                            // Remove from filter
-                            const index = columnFilters[column].indexOf(value.toString());
-                            if (index > -1) {
-                                columnFilters[column].splice(index, 1);
-                            }
-                        }
-
-                        // If all are selected, remove the filter
-                        if (columnFilters[column].length === uniqueValues.length || 
-                            columnFilters[column].length === 0) {
-                            delete columnFilters[column];
-                        }
-
-                        filterData();
-                    };
-
-                    const label = document.createElement('label');
-                    label.style.cursor = 'pointer';
-                    label.style.display = 'flex';
-                    label.style.alignItems = 'center';
-                    label.appendChild(checkbox);
-                    label.appendChild(document.createTextNode(value || '(empty)'));
-
-                    filterItem.appendChild(label);
-                    filterItem.onclick = (e) => {
-                        e.stopPropagation();
-                        checkbox.click();
-                    };
-                    
-                    menu.appendChild(filterItem);
-                });
-            }
-
-            return menu;
-        }
-
-        // Close all sort menus
-        function closeAllSortMenus() {
-            document.querySelectorAll('.sort-menu').forEach(menu => {
-                menu.classList.remove('open');
-            });
-        }
-
-        // Initialize table headers with click handlers
-        function initializeTableHeaders() {
-            const headers = document.querySelectorAll('#dataTable th');
-            const columnMappings = ['rank', 'USID', 'METRIC_DISPLAY', 'IDXCONTR', 'TOTAL_EXTRAFAILURES', 
-                                   'VENDOR', 'CQECLUSTER', 'severity'];
-
-            headers.forEach((th, index) => {
-                th.style.position = 'relative';
-                
-                th.onclick = (e) => {
-                    e.stopPropagation();
-                    
-                    // Close other menus
-                    document.querySelectorAll('.sort-menu').forEach((menu, menuIndex) => {
-                        if (menuIndex !== index) {
-                            menu.classList.remove('open');
-                        }
-                    });
-
-                    // Toggle current menu
-                    let menu = document.getElementById(`sort-menu-${index}`);
-                    if (menu) {
-                        menu.classList.toggle('open');
-                    } else {
-                        // Create menu if it doesn't exist
-                        if (index === 0) return; // Skip rank column
-                        
-                        const column = columnMappings[index];
-                        
-                        // Get unique values for filter options (for certain columns)
-                        let uniqueValues = [];
-                        if (column === 'VENDOR' || column === 'CQECLUSTER' || column === 'severity' || column === 'METRIC_DISPLAY') {
-                            uniqueValues = [...new Set(displayData.map(row => {
-                                if (column === 'severity') {
-                                    return row.severity || calculateSeverity(row);
-                                }
-                                return row[column] || '';
-                            }))].sort();
-                        }
-
-                        menu = createSortMenu(column, index, uniqueValues);
-                        th.appendChild(menu);
-                        menu.classList.add('open');
-                    }
-                };
-            });
-
-            // Close menus when clicking outside
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('th') && !e.target.closest('.sort-menu')) {
-                    closeAllSortMenus();
-                }
-            });
-        }
-
-        // Calculate severity for filtering
-        function calculateSeverity(row) {
-            const sortingCriteria = document.getElementById('sortingCriteria').value;
-            
-            // Calculate total for percentage
-            let datasetTotal = 0;
-            if (sortingCriteria === 'contribution') {
-                datasetTotal = displayData.reduce((sum, r) => {
-                    const contrib = Number(r.IDXCONTR) || Number(r.AVG_IDXCONTR) || 0;
-                    const total = r.TOTAL_IDXCONTR ? Number(r.TOTAL_IDXCONTR) : contrib * (r.RECORD_COUNT || 1);
-                    return sum + Math.abs(total);
-                }, 0);
-            } else {
-                datasetTotal = displayData.reduce((sum, r) => {
-                    const total = r.TOTAL_EXTRAFAILURES ? 
-                        Math.max(0, Number(r.TOTAL_EXTRAFAILURES)) :
-                        Math.max(0, Number(r.AVG_EXTRAFAILURES || r.EXTRAFAILURES) || 0) * (r.RECORD_COUNT || 1);
-                    return sum + (isFinite(total) ? total : 0);
-                }, 0);
-            }
-
-            const contribution = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
-            const totalContribution = Number(row.TOTAL_IDXCONTR) || (contribution * (row.RECORD_COUNT || 1));
-            const totalFailures = Math.max(0, Number(row.TOTAL_EXTRAFAILURES) || 
-                                          (Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0) * (row.RECORD_COUNT || 1)));
-
-            let percentageOfTotal;
-            if (sortingCriteria === 'contribution') {
-                percentageOfTotal = datasetTotal !== 0 ? (Math.abs(totalContribution) / datasetTotal) * 100 : 0;
-            } else {
-                percentageOfTotal = datasetTotal > 0 ? (totalFailures / datasetTotal) * 100 : 0;
-            }
-
-            if (Math.abs(percentageOfTotal) >= 5) return 'CRITICAL';
-            else if (Math.abs(percentageOfTotal) >= 2.5) return 'HIGH';
-            else if (Math.abs(percentageOfTotal) >= 0.5) return 'MEDIUM';
-            else return 'LOW';
         }
 
         function updateTable(data) {
@@ -1573,6 +1372,14 @@
 
                 const totalFailuresCell = `<strong title="Total: ${formatFullNumber(validTotal)} failures">${formatCompactNumber(validTotal)}</strong>`;
 
+                // Handle district display
+                let districtCell = '';
+                if (showDistrict) {
+                    const district = row.DISTRICT || '-';
+                    const districtClass = district === '-' ? 'district-badge no-data' : 'district-badge';
+                    districtCell = `<td><span class="${districtClass}">${district}</span></td>`;
+                }
+
                 tr.innerHTML = `
                     <td><strong>#${index + 1}</strong></td>
                     <td><a href="usid_detail.html?usid=${row.USID}" target="_blank" class="usid-link">${row.USID || '-'}</a></td>
@@ -1581,15 +1388,11 @@
                     <td>${totalFailuresCell}</td>
                     <td>${row.VENDOR || '-'}</td>
                     <td>${row.CQECLUSTER || '-'}</td>
+                    ${districtCell}
                     <td><span class="${severityClass}" title="${Math.abs(percentageOfTotal).toFixed(2)}% of total">${severity}</span></td>
                 `;
                 tbody.appendChild(tr);
             });
-
-            // Initialize table headers for sorting/filtering on first load
-            if (!document.querySelector('.sort-menu')) {
-                initializeTableHeaders();
-            }
         }
 
         function resetFilters() {
@@ -1607,6 +1410,9 @@
             // Repopulate with all clusters
             populateMultiSelect('cqeCluster', allClusters);
             updateSelectedClusters();
+
+            // Reset district visibility
+            updateDistrictVisibility('');
 
             document.getElementById('metricName').value = '';
             document.getElementById('usid').value = '';
@@ -1635,7 +1441,7 @@
                 const validAvg = isFinite(avgFailures) ? Math.round(avgFailures) : 0;
                 const validTotal = isFinite(totalFailures) ? Math.round(totalFailures) : 0;
 
-                return {
+                const exportRow = {
                     Rank: index + 1,
                     USID: row.USID || '',
                     MetricName: row.METRIC_DISPLAY || row.METRICNAME || '',
@@ -1645,12 +1451,20 @@
                     RecordCount: row.RECORD_COUNT || 1,
                     Vendor: row.VENDOR || '',
                     Cluster: row.CQECLUSTER || '',
-                    Submarket: row.SUBMKT || '',
-                    EarliestPeriod: row.EARLIEST_PERIOD || '',
-                    LatestPeriod: row.LATEST_PERIOD || '',
-                    AggregationType: isShowingAllMetrics ? 'All Metrics' : 'Single Metric',
-                    SortedBy: sortingCriteria === 'contribution' ? 'Contribution (Worst First)' : 'Total Failures (Highest First)'
+                    Submarket: row.SUBMKT || ''
                 };
+
+                // Add district if showing
+                if (showDistrict) {
+                    exportRow.District = row.DISTRICT || '-';
+                }
+
+                exportRow.EarliestPeriod = row.EARLIEST_PERIOD || '';
+                exportRow.LatestPeriod = row.LATEST_PERIOD || '';
+                exportRow.AggregationType = isShowingAllMetrics ? 'All Metrics' : 'Single Metric';
+                exportRow.SortedBy = sortingCriteria === 'contribution' ? 'Contribution (Worst First)' : 'Total Failures (Highest First)';
+
+                return exportRow;
             });
 
             const headers = Object.keys(exportData[0]);

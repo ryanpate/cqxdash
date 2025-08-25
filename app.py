@@ -1,9 +1,9 @@
 """
-CQI Dashboard Flask API - Using CSV for Submarket-Cluster Mapping
-Reads submarket-cluster relationships from submkt_cqecluster_mapping.csv
+CQI Dashboard Flask API - With District Support from CSV Files
+Reads district data from {SUBMARKET}.csv files
 """
 
-from dotenv import load_dotenv  # For loading .env file
+from dotenv import load_dotenv
 import json
 import logging
 from functools import lru_cache
@@ -15,6 +15,7 @@ import pandas as pd
 import snowflake.connector as sc
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
@@ -46,20 +47,18 @@ SNOWFLAKE_CONFIG = {
 # Path to the mapping CSV file
 MAPPING_CSV_PATH = 'submkt_cqecluster_mapping.csv'
 
+# Directory for district CSV files
+DISTRICT_CSV_DIR = '.'  # Current directory, can be changed to a specific folder
+
 # Handle authentication method
 if os.getenv('SNOWFLAKE_PRIVATE_KEY_PATH'):
-    # Use private key authentication
-    SNOWFLAKE_CONFIG['private_key_file'] = os.getenv(
-        'SNOWFLAKE_PRIVATE_KEY_PATH')
+    SNOWFLAKE_CONFIG['private_key_file'] = os.getenv('SNOWFLAKE_PRIVATE_KEY_PATH')
     if os.getenv('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE'):
-        SNOWFLAKE_CONFIG['private_key_file_pwd'] = os.getenv(
-            'SNOWFLAKE_PRIVATE_KEY_PASSPHRASE')
+        SNOWFLAKE_CONFIG['private_key_file_pwd'] = os.getenv('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE')
 elif os.getenv('SNOWFLAKE_PASSWORD'):
-    # Use password authentication
     SNOWFLAKE_CONFIG['password'] = os.getenv('SNOWFLAKE_PASSWORD')
 else:
-    logger.warning(
-        "No authentication method configured. Set either SNOWFLAKE_PRIVATE_KEY_PATH or SNOWFLAKE_PASSWORD")
+    logger.warning("No authentication method configured. Set either SNOWFLAKE_PRIVATE_KEY_PATH or SNOWFLAKE_PASSWORD")
 
 
 def validate_config():
@@ -68,20 +67,16 @@ def validate_config():
     missing = [key for key in required if not SNOWFLAKE_CONFIG.get(key)]
 
     if missing:
-        logger.error(
-            f"Missing required Snowflake configuration: {', '.join(missing)}")
+        logger.error(f"Missing required Snowflake configuration: {', '.join(missing)}")
         logger.error("Please set the following environment variables:")
         for key in missing:
             logger.error(f"  SNOWFLAKE_{key.upper()}")
         return False
 
-    # Check for authentication
-    has_auth = (
-        'private_key_file' in SNOWFLAKE_CONFIG or 'password' in SNOWFLAKE_CONFIG)
+    has_auth = ('private_key_file' in SNOWFLAKE_CONFIG or 'password' in SNOWFLAKE_CONFIG)
     if not has_auth:
         logger.error("No authentication method configured.")
-        logger.error(
-            "Set either SNOWFLAKE_PRIVATE_KEY_PATH or SNOWFLAKE_PASSWORD")
+        logger.error("Set either SNOWFLAKE_PRIVATE_KEY_PATH or SNOWFLAKE_PASSWORD")
         return False
 
     return True
@@ -91,12 +86,10 @@ def load_submarket_cluster_mapping():
     """Load the submarket-cluster mapping from CSV file"""
     mapping = {}
 
-    # Check if CSV file exists
     if not os.path.exists(MAPPING_CSV_PATH):
         logger.warning(f"Mapping CSV file not found: {MAPPING_CSV_PATH}")
         logger.warning("Creating sample mapping file...")
 
-        # Create a sample CSV file if it doesn't exist
         sample_data = [
             ['SUBMKT', 'CQECLUSTER'],
             ['NYC', 'CQE_NYC_MANHATTAN'],
@@ -113,7 +106,6 @@ def load_submarket_cluster_mapping():
 
         logger.info(f"Sample mapping file created: {MAPPING_CSV_PATH}")
 
-    # Read the CSV file
     try:
         with open(MAPPING_CSV_PATH, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
@@ -126,14 +118,50 @@ def load_submarket_cluster_mapping():
                         mapping[submarket] = []
                     mapping[submarket].append(cluster)
 
-        logger.info(
-            f"Loaded mapping for {len(mapping)} submarkets from {MAPPING_CSV_PATH}")
+        logger.info(f"Loaded mapping for {len(mapping)} submarkets from {MAPPING_CSV_PATH}")
 
     except Exception as e:
         logger.error(f"Error reading mapping CSV: {str(e)}")
         return {}
 
     return mapping
+
+
+def load_district_mapping(submarket):
+    """Load district mapping for a specific submarket from CSV file"""
+    if not submarket:
+        return {}
+    
+    # Create filename from submarket name
+    district_file = os.path.join(DISTRICT_CSV_DIR, f"{submarket}.csv")
+    
+    if not os.path.exists(district_file):
+        logger.info(f"District file not found for submarket '{submarket}': {district_file}")
+        return {}
+    
+    district_mapping = {}
+    
+    try:
+        with open(district_file, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if len(row) >= 2:
+                    # First column is USID (as integer), second is district
+                    try:
+                        usid = str(row[0]).strip()  # Convert to string for consistency
+                        district = str(row[1]).strip()
+                        district_mapping[usid] = district
+                    except (ValueError, IndexError) as e:
+                        logger.warning(f"Skipping invalid row in {district_file}: {row}")
+                        continue
+        
+        logger.info(f"Loaded {len(district_mapping)} district mappings for submarket '{submarket}'")
+        
+    except Exception as e:
+        logger.error(f"Error reading district file {district_file}: {str(e)}")
+        return {}
+    
+    return district_mapping
 
 
 def clean_numeric_value(value):
@@ -147,22 +175,17 @@ def clean_numeric_value(value):
             return 0
         if np.isnan(value):
             return 0
-        # Set negative values to 0
         if value < 0:
             return 0
-        # Convert to int if it's a whole number
         if value == int(value):
             return int(value)
         return float(value)
     if isinstance(value, (int, np.integer)):
-        # Set negative values to 0
         return max(0, int(value))
-    # Try to convert string to number
     try:
         num_val = float(value)
         if np.isnan(num_val) or np.isinf(num_val):
             return 0
-        # Set negative values to 0
         if num_val < 0:
             return 0
         if num_val == int(num_val):
@@ -197,8 +220,7 @@ def clean_contribution_value(value):
 def get_snowflake_connection():
     """Create and return a Snowflake connection"""
     if not validate_config():
-        raise ValueError(
-            "Invalid Snowflake configuration. Check environment variables.")
+        raise ValueError("Invalid Snowflake configuration. Check environment variables.")
 
     try:
         conn = sc.connect(**SNOWFLAKE_CONFIG)
@@ -219,6 +241,7 @@ def health_check():
         'config_valid': config_valid,
         'mapping_csv_exists': csv_exists,
         'mapping_csv_path': MAPPING_CSV_PATH,
+        'district_csv_dir': DISTRICT_CSV_DIR,
         'timestamp': datetime.now().isoformat()
     })
 
@@ -230,12 +253,9 @@ def test_connection():
         conn = get_snowflake_connection()
         cur = conn.cursor()
 
-        # Test basic connection
-        cur.execute(
-            "SELECT CURRENT_USER(), CURRENT_DATABASE(), CURRENT_SCHEMA()")
+        cur.execute("SELECT CURRENT_USER(), CURRENT_DATABASE(), CURRENT_SCHEMA()")
         context = cur.fetchone()
 
-        # Check table exists
         cur.execute("""
             SELECT COUNT(*) 
             FROM INFORMATION_SCHEMA.TABLES 
@@ -244,7 +264,6 @@ def test_connection():
         """)
         table_exists = cur.fetchone()[0] > 0
 
-        # Count rows
         row_count = 0
         recent_count = 0
         sample_data = []
@@ -254,7 +273,6 @@ def test_connection():
             cur.execute("SELECT COUNT(*) FROM CQI2025_CQX_CONTRIBUTION")
             row_count = cur.fetchone()[0]
 
-            # Get recent data count
             cur.execute("""
                 SELECT COUNT(*) 
                 FROM CQI2025_CQX_CONTRIBUTION
@@ -262,7 +280,6 @@ def test_connection():
             """)
             recent_count = cur.fetchone()[0]
 
-            # Get date range
             cur.execute("""
                 SELECT 
                     MIN(PERIODSTART) as earliest,
@@ -271,7 +288,6 @@ def test_connection():
             """)
             date_range = cur.fetchone()
 
-            # Get sample data
             cur.execute("""
                 SELECT USID, METRICNAME, EXTRAFAILURES, IDXCONTR, VENDOR, CQECLUSTER, SUBMKT, PERIODSTART
                 FROM CQI2025_CQX_CONTRIBUTION
@@ -305,14 +321,16 @@ def test_connection():
         cur.close()
         conn.close()
 
-        # Load and test the CSV mapping
         mapping = load_submarket_cluster_mapping()
         mapping_info = {
             'total_submarkets': len(mapping),
             'total_mappings': sum(len(clusters) for clusters in mapping.values()),
             'sample_mappings': dict(list(mapping.items())[:3]) if mapping else {}
         }
-
+        
+        # Check for district CSV files
+        district_files = [f for f in os.listdir(DISTRICT_CSV_DIR) if f.endswith('.csv') and f != MAPPING_CSV_PATH]
+        
         response_data = {
             'connection': 'success',
             'user': context[0],
@@ -322,7 +340,8 @@ def test_connection():
             'total_rows': row_count,
             'recent_rows_2days': recent_count,
             'sample_data': sample_data,
-            'csv_mapping': mapping_info
+            'csv_mapping': mapping_info,
+            'district_files_found': district_files[:5]  # Show first 5 district files found
         }
 
         if date_range:
@@ -351,7 +370,6 @@ def get_filter_options():
 
         filters = {}
 
-        # Define allowed metrics with display names
         metric_mapping = {
             'VOICE_CDR_RET_25': 'V-CDR',
             'LTE_IQI_NS_ESO_25': 'NS/ESO',
@@ -366,7 +384,6 @@ def get_filter_options():
             'VOLTE_WIFI_CDR_25': 'WIFI-RET'
         }
 
-        # Get unique submarkets from database
         cur.execute("""
             SELECT DISTINCT SUBMKT 
             FROM CQI2025_CQX_CONTRIBUTION 
@@ -375,7 +392,6 @@ def get_filter_options():
         """)
         db_submarkets = [row[0] for row in cur.fetchall()]
 
-        # Get all unique CQE clusters from database
         cur.execute("""
             SELECT DISTINCT CQECLUSTER 
             FROM CQI2025_CQX_CONTRIBUTION 
@@ -387,34 +403,25 @@ def get_filter_options():
         cur.close()
         conn.close()
 
-        # Load the CSV mapping for filtering purposes only
         csv_mapping = load_submarket_cluster_mapping()
 
-        # ALWAYS use ALL submarkets and clusters from the database for initial display
         filters['submarkets'] = db_submarkets
         filters['cqeClusters'] = db_clusters
 
-        # Store the CSV mapping for frontend filtering when a submarket is selected
         if csv_mapping:
             filters['submarketClusters'] = csv_mapping
-            logger.info(
-                f"CSV mapping loaded: {len(csv_mapping)} submarkets with cluster relationships")
+            logger.info(f"CSV mapping loaded: {len(csv_mapping)} submarkets with cluster relationships")
 
-            # Log any submarkets that are in database but not in CSV as info
             db_submarkets_set = set(db_submarkets)
             csv_submarkets = set(csv_mapping.keys())
             unmapped_submarkets = db_submarkets_set - csv_submarkets
 
             if unmapped_submarkets:
-                logger.info(
-                    f"Submarkets without CSV mapping (will show all clusters): {unmapped_submarkets}")
+                logger.info(f"Submarkets without CSV mapping (will show all clusters): {unmapped_submarkets}")
         else:
-            # Empty mapping if no CSV file
             filters['submarketClusters'] = {}
-            logger.info(
-                "No CSV mapping file found - all clusters will be available for all submarkets")
+            logger.info("No CSV mapping file found - all clusters will be available for all submarkets")
 
-        # Return the display names for metrics
         filters['metricNames'] = list(metric_mapping.values())
         filters['metricMapping'] = metric_mapping
 
@@ -427,11 +434,9 @@ def get_filter_options():
 
 @app.route('/api/data', methods=['GET'])
 def get_cqi_data():
-    """Get CQI data - aggregated by USID+METRICNAME with multi-select CQE Clusters support"""
+    """Get CQI data with district information when submarket is selected"""
     try:
-        # Get filter parameters
         submarket = request.args.get('submarket', '')
-        # Now accepts comma-separated values
         cqe_clusters_str = request.args.get('cqeClusters', '')
         period_start = request.args.get('periodStart', '')
         period_end = request.args.get('periodEnd', '')
@@ -439,17 +444,14 @@ def get_cqi_data():
         usid = request.args.get('usid', '')
         sorting_criteria = request.args.get('sortingCriteria', 'contribution')
 
-        # Parse multiple CQE clusters
         cqe_clusters = []
         if cqe_clusters_str:
-            cqe_clusters = [c.strip()
-                            for c in cqe_clusters_str.split(',') if c.strip()]
+            cqe_clusters = [c.strip() for c in cqe_clusters_str.split(',') if c.strip()]
 
         logger.info(f"Data request with sorting: {sorting_criteria}")
         logger.info(f"Selected Submarket: {submarket}")
         logger.info(f"Selected CQE Clusters: {cqe_clusters}")
 
-        # Define metric mapping
         metric_mapping = {
             'VOICE_CDR_RET_25': 'V-CDR',
             'LTE_IQI_NS_ESO_25': 'NS/ESO',
@@ -464,11 +466,9 @@ def get_cqi_data():
             'VOLTE_WIFI_CDR_25': 'WIFI-RET'
         }
 
-        # Determine aggregation mode
         aggregate_all_metrics = not metric_name
 
         if aggregate_all_metrics:
-            # Aggregate ALL metrics per USID
             query = """
                 SELECT 
                     USID,
@@ -489,7 +489,6 @@ def get_cqi_data():
                 WHERE 1=1
             """
         else:
-            # Aggregate by USID + METRICNAME
             query = """
                 SELECT 
                     USID,
@@ -510,7 +509,6 @@ def get_cqi_data():
                 WHERE 1=1
             """
 
-        # Add filters
         allowed_metrics = list(metric_mapping.keys())
         query += f" AND METRICNAME IN ({','.join(['%s'] * len(allowed_metrics))})"
         params = allowed_metrics.copy()
@@ -519,7 +517,6 @@ def get_cqi_data():
             query += " AND SUBMKT = %s"
             params.append(submarket)
 
-        # Handle multiple CQE clusters
         if cqe_clusters:
             query += f" AND CQECLUSTER IN ({','.join(['%s'] * len(cqe_clusters))})"
             params.extend(cqe_clusters)
@@ -542,13 +539,11 @@ def get_cqi_data():
             query += " AND USID = %s"
             params.append(usid)
 
-        # Group by clause
         if aggregate_all_metrics:
             query += " GROUP BY USID"
         else:
             query += " GROUP BY USID, METRICNAME"
 
-        # Order by based on sorting criteria
         if sorting_criteria == 'contribution':
             query += " ORDER BY AVG_IDXCONTR ASC NULLS LAST"
         else:
@@ -556,7 +551,6 @@ def get_cqi_data():
 
         query += " LIMIT 1000"
 
-        # Execute query
         conn = get_snowflake_connection()
         cur = conn.cursor()
 
@@ -565,14 +559,18 @@ def get_cqi_data():
         else:
             cur.execute(query)
 
-        # Fetch and process results
         columns = [desc[0] for desc in cur.description]
         data = cur.fetchall()
 
         cur.close()
         conn.close()
 
-        # Process results
+        # Load district mapping if submarket is selected
+        district_mapping = {}
+        if submarket:
+            district_mapping = load_district_mapping(submarket)
+            logger.info(f"Loaded {len(district_mapping)} district mappings for submarket: {submarket}")
+
         result = []
         for row in data:
             record = {}
@@ -598,7 +596,6 @@ def get_cqi_data():
                 else:
                     record[col] = value
 
-            # Add display fields
             if aggregate_all_metrics or record.get('METRICNAME') == 'ALL':
                 record['METRIC_DISPLAY'] = 'All'
             elif record.get('METRICNAME') in metric_mapping:
@@ -608,6 +605,14 @@ def get_cqi_data():
 
             record['EXTRAFAILURES'] = record.get('AVG_EXTRAFAILURES', 0)
             record['IDXCONTR'] = record.get('AVG_IDXCONTR', 0)
+            
+            # Add district information if available
+            if submarket and district_mapping:
+                usid_str = str(record.get('USID', ''))
+                record['DISTRICT'] = district_mapping.get(usid_str, '-')
+                logger.debug(f"USID {usid_str}: District = {record['DISTRICT']}")
+            else:
+                record['DISTRICT'] = None
 
             result.append(record)
 
@@ -625,12 +630,9 @@ def get_summary_stats():
         conn = get_snowflake_connection()
         cur = conn.cursor()
 
-        # Get date range for last 2 days
         end_date = datetime.now().strftime('%Y-%m-%d 23:59:59')
-        start_date = (datetime.now() - timedelta(days=2)
-                      ).strftime('%Y-%m-%d 00:00:00')
+        start_date = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d 00:00:00')
 
-        # Define allowed metrics
         metric_mapping = {
             'VOICE_CDR_RET_25': 'V-CDR',
             'LTE_IQI_NS_ESO_25': 'NS/ESO',
@@ -647,7 +649,6 @@ def get_summary_stats():
 
         allowed_metrics = list(metric_mapping.keys())
 
-        # Query for summary statistics
         query = f"""
             SELECT 
                 COUNT(DISTINCT USID) as total_usids,
@@ -695,7 +696,6 @@ def get_summary_stats():
 def get_usid_detail():
     """Get detailed metric data for a specific USID over time"""
     try:
-        # Get parameters
         usid = request.args.get('usid', '')
         period_start = request.args.get('periodStart', '')
         period_end = request.args.get('periodEnd', '')
@@ -704,7 +704,6 @@ def get_usid_detail():
         if not usid:
             return jsonify({'error': 'USID is required'}), 400
 
-        # Define metric mapping
         metric_mapping = {
             'VOICE_CDR_RET_25': 'V-CDR',
             'LTE_IQI_NS_ESO_25': 'NS/ESO',
@@ -719,7 +718,6 @@ def get_usid_detail():
             'VOLTE_WIFI_CDR_25': 'WIFI-RET'
         }
 
-        # Query for time series data
         query = """
             SELECT 
                 USID,
@@ -737,7 +735,6 @@ def get_usid_detail():
         query += f" AND METRICNAME IN ({','.join(['%s'] * len(allowed_metrics))})"
         params = [usid] + allowed_metrics
 
-        # Add date filters
         if period_start:
             query += " AND PERIODSTART >= %s"
             params.append(f"{period_start} 00:00:00")
@@ -746,33 +743,28 @@ def get_usid_detail():
             query += " AND PERIODEND <= %s"
             params.append(f"{period_end} 23:59:59")
 
-        # Filter by specific metric if provided
         if metric_name:
             reverse_mapping = {v: k for k, v in metric_mapping.items()}
             actual_metric = reverse_mapping.get(metric_name, metric_name)
             query += " AND METRICNAME = %s"
             params.append(actual_metric)
 
-        # Group by date and metric
         query += """
             GROUP BY USID, METRICNAME, DATE(PERIODSTART)
             ORDER BY DATE(PERIODSTART), METRICNAME
         """
 
-        # Execute query
         conn = get_snowflake_connection()
         cur = conn.cursor()
 
         cur.execute(query, params)
 
-        # Fetch results
         columns = [desc[0] for desc in cur.description]
         data = cur.fetchall()
 
         cur.close()
         conn.close()
 
-        # Process results
         result = []
         for row in data:
             record = {}
@@ -792,7 +784,6 @@ def get_usid_detail():
                 else:
                     record[col] = value
 
-            # Add metric display name
             if record.get('METRICNAME') in metric_mapping:
                 record['METRIC_DISPLAY'] = metric_mapping[record['METRICNAME']]
             else:
@@ -818,42 +809,39 @@ def internal_error(error):
 
 
 if __name__ == '__main__':
-    print("🚀 Starting CQI Dashboard API Server (with CSV-based Submarket-Cluster Mapping)...")
+    print("🚀 Starting CQI Dashboard API Server with District Support...")
     print(f"📄 Looking for mapping file: {MAPPING_CSV_PATH}")
+    print(f"📁 District CSV files directory: {DISTRICT_CSV_DIR}")
 
-    # Check if mapping file exists
     if os.path.exists(MAPPING_CSV_PATH):
         print(f"✅ Mapping file found: {MAPPING_CSV_PATH}")
-        # Try to load and display summary
         mapping = load_submarket_cluster_mapping()
         if mapping:
             print(f"📊 Loaded mappings for {len(mapping)} submarkets")
-            print(
-                f"   Total cluster mappings: {sum(len(clusters) for clusters in mapping.values())}")
+            print(f"   Total cluster mappings: {sum(len(clusters) for clusters in mapping.values())}")
     else:
-        print(
-            f"⚠️  Mapping file not found. A sample file will be created at: {MAPPING_CSV_PATH}")
+        print(f"⚠️  Mapping file not found. A sample file will be created at: {MAPPING_CSV_PATH}")
         print("   Please update it with your actual submarket-cluster mappings")
 
-    # Check configuration
+    # Check for district CSV files
+    district_files = [f for f in os.listdir(DISTRICT_CSV_DIR) if f.endswith('.csv') and f != MAPPING_CSV_PATH]
+    if district_files:
+        print(f"📊 Found {len(district_files)} district CSV files:")
+        for f in district_files[:5]:
+            print(f"   - {f}")
+        if len(district_files) > 5:
+            print(f"   ... and {len(district_files) - 5} more")
+    else:
+        print("⚠️  No district CSV files found. Add {SUBMARKET}.csv files for district mapping")
+
     if validate_config():
         print("✅ Configuration loaded from environment variables")
-        print(
-            f"📊 Connecting to Snowflake as user: {SNOWFLAKE_CONFIG.get('user')}")
+        print(f"📊 Connecting to Snowflake as user: {SNOWFLAKE_CONFIG.get('user')}")
     else:
         print("❌ Configuration incomplete. Please check environment variables.")
-        print("\nRequired environment variables:")
-        print("  SNOWFLAKE_USER")
-        print("  SNOWFLAKE_PRIVATE_KEY_PATH or SNOWFLAKE_PASSWORD")
-        print("\nOptional environment variables:")
-        print("  SNOWFLAKE_ACCOUNT (default: nsasprd.east-us-2.privatelink)")
-        print("  SNOWFLAKE_WAREHOUSE (default: USR_REPORTING_WH)")
-        print("  SNOWFLAKE_DATABASE (default: PRD_MOBILITY)")
-        print("  SNOWFLAKE_SCHEMA (default: PRD_MOBILITYSCORECARD_VIEWS)")
-        print("  SNOWFLAKE_PRIVATE_KEY_PASSPHRASE (if key is encrypted)")
 
     print("\n📡 API will be available at: http://localhost:5000")
-    print("✨ NEW FEATURE: CSV-based Submarket-Cluster filtering!")
+    print("✨ Features: CSV-based Submarket-Cluster filtering + District mapping!")
     print("-" * 50)
 
     app.run(debug=False, host='0.0.0.0', port=5000)
