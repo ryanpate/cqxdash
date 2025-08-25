@@ -302,6 +302,78 @@
             letter-spacing: 0.5px;
             border-bottom: 2px solid #e2e8f0;
             transition: background-color 0.3s ease;
+            cursor: pointer;
+            position: relative;
+            user-select: none;
+        }
+
+        th:hover {
+            background: #edf2f7;
+        }
+
+        th.sorted-asc::after {
+            content: ' ▲';
+            font-size: 0.7rem;
+            color: #667eea;
+        }
+
+        th.sorted-desc::after {
+            content: ' ▼';
+            font-size: 0.7rem;
+            color: #667eea;
+        }
+
+        /* Sort/Filter dropdown menu */
+        .sort-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 1001;
+            min-width: 200px;
+            display: none;
+            margin-top: 5px;
+        }
+
+        .sort-menu.open {
+            display: block;
+        }
+
+        .sort-menu-item {
+            padding: 10px 15px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            border-bottom: 1px solid #f0f4f8;
+        }
+
+        .sort-menu-item:hover {
+            background: #f7fafc;
+        }
+
+        .sort-menu-item.active {
+            background: #e6f7ff;
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .sort-menu-divider {
+            border-bottom: 2px solid #e2e8f0;
+            margin: 5px 0;
+        }
+
+        .sort-menu-header {
+            padding: 8px 15px;
+            font-weight: 600;
+            color: #4a5568;
+            background: #f7fafc;
+            font-size: 0.85rem;
+        }
+
+        .filter-checkbox {
+            margin-right: 8px;
         }
 
         td {
@@ -505,733 +577,1003 @@
                 detail page in a new tab.<br>
                 <strong>Contribution Ranking:</strong> Smallest to largest (most negative/worst values first).<br>
                 <strong>Failures Ranking:</strong> Largest to smallest (highest failure counts first).<br>
-                <strong>Dynamic Severity:</strong> CRITICAL ≥5% | HIGH 2.5-5% | MEDIUM 0.5-2.5% | LOW <0.5% </div>
+                <strong>Dynamic Severity:</strong> CRITICAL ≥5% | HIGH 2.5-5% | MEDIUM 0.5-2.5% | LOW <0.5%
+            </div>
 
-                    <div id="tableContainer" style="display: block;">
-                        <div class="loading">
-                            <div class="loading-spinner"></div>
-                            <p style="margin-top: 10px;">Loading data...</p>
-                        </div>
-                        <div class="table-container" style="display: none;">
-                            <table id="dataTable">
-                                <thead>
-                                    <tr>
-                                        <th>Rank</th>
-                                        <th>USID</th>
-                                        <th>Metric Name</th>
-                                        <th>Contribution</th>
-                                        <th>Total Failures</th>
-                                        <th>Vendor</th>
-                                        <th>CQE Cluster</th>
-                                        <th>Severity</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="tableBody">
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+            <div id="tableContainer" style="display: block;">
+                <div class="loading">
+                    <div class="loading-spinner"></div>
+                    <p style="margin-top: 10px;">Loading data...</p>
+                </div>
+                <div class="table-container" style="display: none;">
+                    <table id="dataTable">
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>USID</th>
+                                <th>Metric Name</th>
+                                <th>Contribution</th>
+                                <th>Total Failures</th>
+                                <th>Vendor</th>
+                                <th>CQE Cluster</th>
+                                <th>Severity</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
+    </div>
 
-        <script>
-            // API endpoint
-            const API_URL = 'http://cqxdashboard.web.att.com:5000/api';
+    <script>
+        // API endpoint
+        const API_URL = 'http://cqxdashboard.web.att.com:5000/api';
 
-            let currentData = [];
-            let apiAvailable = false;
-            let metricMapping = {};
-            let selectedClusters = [];
-            let allClusters = [];
-            let submarketClusters = {};
-            let currentSubmarketClusters = [];
+        let currentData = [];
+        let displayData = [];  // Data after filtering
+        let apiAvailable = false;
+        let metricMapping = {};
+        let selectedClusters = [];
+        let allClusters = [];
+        let submarketClusters = {};
+        let currentSubmarketClusters = [];
+        let currentSort = { column: null, direction: 'asc' };
+        let columnFilters = {};
 
-            // Utility functions for number formatting
-            function formatCompactNumber(num) {
-                if (num === null || num === undefined || num === '' || isNaN(num)) return '0';
-                num = Number(num);
-                if (!isFinite(num)) return '0';
-                if (num < 0) return '0';
-                num = Math.round(num);
+        // Utility functions for number formatting
+        function formatCompactNumber(num) {
+            if (num === null || num === undefined || num === '' || isNaN(num)) return '0';
+            num = Number(num);
+            if (!isFinite(num)) return '0';
+            if (num < 0) return '0';
+            num = Math.round(num);
 
-                if (num >= 1000000) {
-                    return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
-                } else if (num >= 1000) {
-                    return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+            } else if (num >= 1000) {
+                return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+            } else {
+                return num.toString();
+            }
+        }
+
+        function formatContribution(num) {
+            if (num === null || num === undefined || num === '' || isNaN(num)) return '0';
+            num = Number(num);
+            if (!isFinite(num)) return '0';
+
+            if (Math.abs(num) < 1 && Math.abs(num) > 0) {
+                return num.toFixed(4);
+            }
+            else if (Math.abs(num) < 1000) {
+                return num.toFixed(2);
+            }
+            else {
+                const absNum = Math.abs(num);
+                let formatted;
+
+                if (absNum >= 1000000) {
+                    formatted = (absNum / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+                } else if (absNum >= 1000) {
+                    formatted = (absNum / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
                 } else {
-                    return num.toString();
+                    formatted = absNum.toFixed(2);
                 }
+
+                return num >= 0 ? `+${formatted}` : `-${formatted}`;
             }
+        }
 
-            function formatContribution(num) {
-                if (num === null || num === undefined || num === '' || isNaN(num)) return '0';
-                num = Number(num);
-                if (!isFinite(num)) return '0';
+        function formatFullNumber(num) {
+            if (num === null || num === undefined || num === '' || isNaN(num)) return '0';
+            num = Number(num);
+            if (!isFinite(num)) return '0';
+            if (num < 0) return '0';
+            return Math.round(num).toLocaleString();
+        }
 
-                if (Math.abs(num) < 1 && Math.abs(num) > 0) {
-                    return num.toFixed(4);
-                }
-                else if (Math.abs(num) < 1000) {
-                    return num.toFixed(2);
-                }
-                else {
-                    const absNum = Math.abs(num);
-                    let formatted;
+        // Initialize multi-select dropdown
+        function initializeMultiSelect() {
+            const input = document.getElementById('cqeClusterInput');
+            const dropdown = document.getElementById('cqeClusterDropdown');
+            const arrow = document.getElementById('cqeClusterArrow');
 
-                    if (absNum >= 1000000) {
-                        formatted = (absNum / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
-                    } else if (absNum >= 1000) {
-                        formatted = (absNum / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
-                    } else {
-                        formatted = absNum.toFixed(2);
-                    }
-
-                    return num >= 0 ? `+${formatted}` : `-${formatted}`;
-                }
-            }
-
-            function formatFullNumber(num) {
-                if (num === null || num === undefined || num === '' || isNaN(num)) return '0';
-                num = Number(num);
-                if (!isFinite(num)) return '0';
-                if (num < 0) return '0';
-                return Math.round(num).toLocaleString();
-            }
-
-            // Initialize multi-select dropdown
-            function initializeMultiSelect() {
-                const input = document.getElementById('cqeClusterInput');
-                const dropdown = document.getElementById('cqeClusterDropdown');
-                const arrow = document.getElementById('cqeClusterArrow');
-
-                // Toggle dropdown on input click
-                input.addEventListener('click', function (e) {
-                    e.stopPropagation();
-                    dropdown.classList.toggle('open');
-                    arrow.classList.toggle('open');
-                    input.classList.toggle('active');
-                });
-
-                // Close dropdown when clicking outside
-                document.addEventListener('click', function (e) {
-                    if (!e.target.closest('.multi-select-container')) {
-                        dropdown.classList.remove('open');
-                        arrow.classList.remove('open');
-                        input.classList.remove('active');
-                    }
-                });
-
-                // Handle select all checkbox
-                document.getElementById('selectAllClusters').addEventListener('change', function () {
-                    const checkboxes = dropdown.querySelectorAll('input[type="checkbox"]:not(#selectAllClusters):not(:disabled)');
-                    checkboxes.forEach(cb => {
-                        cb.checked = this.checked;
-                    });
-                    updateSelectedClusters();
-                });
-
-                // Add submarket change listener for cascading filter
-                document.getElementById('submarket').addEventListener('change', function () {
-                    handleSubmarketChange(this.value);
-                });
-            }
-
-            // Handle submarket change event - Using CSV-based mapping
-            function handleSubmarketChange(submarket) {
-                console.log('🏙️ Submarket changed to:', submarket || 'All');
-
-                // Clear current cluster selection
-                selectedClusters = [];
-
-                const dropdown = document.getElementById('cqeClusterDropdown');
-                const selectAllOption = dropdown.querySelector('.multi-select-all');
-
-                // Clear dropdown except for Select All option
-                dropdown.innerHTML = '';
-                dropdown.appendChild(selectAllOption);
-
-                if (!submarket || submarket === '') {
-                    // No submarket selected, show all clusters
-                    currentSubmarketClusters = allClusters;
-                    document.getElementById('cqeClusterInput').classList.remove('filtered');
-
-                    // Repopulate with all clusters
-                    populateMultiSelect('cqeCluster', allClusters);
-
-                    console.log('📍 Showing all clusters:', allClusters.length);
-                } else {
-                    // Check if we have CSV mapping for this submarket
-                    if (submarketClusters && submarketClusters[submarket] && submarketClusters[submarket].length > 0) {
-                        // Use CSV mapping for this submarket
-                        currentSubmarketClusters = submarketClusters[submarket];
-                        console.log(`📍 Found ${currentSubmarketClusters.length} clusters for ${submarket} in CSV mapping`);
-
-                        document.getElementById('cqeClusterInput').classList.add('filtered');
-                    } else {
-                        // No CSV mapping for this submarket - show ALL clusters
-                        currentSubmarketClusters = allClusters;
-                        console.log(`⚠️ No CSV mapping for ${submarket}, showing all ${allClusters.length} clusters`);
-
-                        document.getElementById('cqeClusterInput').classList.remove('filtered');
-                    }
-
-                    // Repopulate with appropriate clusters
-                    populateMultiSelect('cqeCluster', currentSubmarketClusters);
-                }
-
-                // Reset select all checkbox
-                document.getElementById('selectAllClusters').checked = false;
-                document.getElementById('selectAllClusters').indeterminate = false;
-
-                // Update the display
-                updateSelectedClusters();
-
-                console.log(`📊 Current available clusters:`, currentSubmarketClusters);
-            }
-
-            // Update selected clusters array and display
-            function updateSelectedClusters() {
-                const dropdown = document.getElementById('cqeClusterDropdown');
-                const checkboxes = dropdown.querySelectorAll('input[type="checkbox"]:not(#selectAllClusters):checked');
-                const visibleCheckboxes = dropdown.querySelectorAll('input[type="checkbox"]:not(#selectAllClusters):not(:disabled)');
-                const selectAllCheckbox = document.getElementById('selectAllClusters');
-                const textElement = document.getElementById('cqeClusterText');
-                const countElement = document.getElementById('clusterCount');
-
-                selectedClusters = Array.from(checkboxes).map(cb => cb.value);
-
-                // Update select all checkbox state
-                if (visibleCheckboxes.length > 0) {
-                    if (checkboxes.length === visibleCheckboxes.length) {
-                        selectAllCheckbox.checked = true;
-                        selectAllCheckbox.indeterminate = false;
-                    } else if (checkboxes.length > 0) {
-                        selectAllCheckbox.checked = false;
-                        selectAllCheckbox.indeterminate = true;
-                    } else {
-                        selectAllCheckbox.checked = false;
-                        selectAllCheckbox.indeterminate = false;
-                    }
-                }
-
-                // Update display text
-                const submarket = document.getElementById('submarket').value;
-
-                if (currentSubmarketClusters.length === 0) {
-                    textElement.textContent = 'No clusters available';
-                    countElement.style.display = 'none';
-                } else if (selectedClusters.length === 0 || selectedClusters.length === currentSubmarketClusters.length) {
-                    if (submarket) {
-                        textElement.textContent = `All ${currentSubmarketClusters.length} clusters in ${submarket}`;
-                    } else {
-                        textElement.textContent = 'All Clusters';
-                    }
-                    countElement.style.display = 'none';
-                } else if (selectedClusters.length === 1) {
-                    textElement.textContent = selectedClusters[0];
-                    countElement.style.display = 'none';
-                } else {
-                    textElement.textContent = `${selectedClusters.length} clusters selected`;
-                    countElement.textContent = selectedClusters.length;
-                    countElement.style.display = 'inline-block';
-                }
-            }
-
-            // Populate multi-select dropdown with options
-            function populateMultiSelect(elementId, options) {
-                const dropdown = document.getElementById(`${elementId}Dropdown`);
-
-                // Keep the select all option
-                const selectAllOption = dropdown.querySelector('.multi-select-all');
-
-                // Clear everything except select all
-                while (dropdown.children.length > 1) {
-                    dropdown.removeChild(dropdown.lastChild);
-                }
-
-                if (options && options.length > 0) {
-                    options.forEach(option => {
-                        const div = document.createElement('div');
-                        div.className = 'multi-select-option';
-
-                        const checkbox = document.createElement('input');
-                        checkbox.type = 'checkbox';
-                        checkbox.id = `cluster_${option.replace(/\s/g, '_')}`;
-                        checkbox.value = option;
-                        checkbox.addEventListener('change', updateSelectedClusters);
-
-                        const label = document.createElement('label');
-                        label.setAttribute('for', checkbox.id);
-                        label.textContent = option;
-
-                        div.appendChild(checkbox);
-                        div.appendChild(label);
-                        dropdown.appendChild(div);
-                    });
-                } else {
-                    // Show message if no clusters available
-                    const div = document.createElement('div');
-                    div.className = 'multi-select-option';
-                    div.style.fontStyle = 'italic';
-                    div.style.color = '#718096';
-                    div.style.cursor = 'default';
-                    div.textContent = 'No clusters available for this submarket';
-                    dropdown.appendChild(div);
-                }
-            }
-
-            // Initialize dashboard
-            document.addEventListener('DOMContentLoaded', function () {
-                console.log('🚀 Dashboard initializing with cascading filters...');
-                setDefaultDates();
-                initializeMultiSelect();
-                checkAPIConnection();
-
-                // Add event listener for sorting criteria change
-                document.getElementById('sortingCriteria').addEventListener('change', function () {
-                    console.log('📊 Ranking criteria changed to:', this.value);
-                    console.log('🔄 Fetching fresh data from Snowflake...');
-                    const indicator = document.getElementById('freshDataIndicator');
-                    indicator.style.display = 'inline-block';
-                    setTimeout(() => indicator.style.display = 'none', 3000);
-                    fetchData();
-                });
-
-                // Add Enter key event listener for USID input field
-                document.getElementById('usid').addEventListener('keypress', function (e) {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        const usidValue = this.value.trim();
-                        if (usidValue) {
-                            window.open(`usid_detail.html?usid=${encodeURIComponent(usidValue)}`, '_blank');
-                            this.value = '';
-                        } else {
-                            fetchData();
-                        }
-                    }
-                });
+            // Toggle dropdown on input click
+            input.addEventListener('click', function (e) {
+                e.stopPropagation();
+                dropdown.classList.toggle('open');
+                arrow.classList.toggle('open');
+                input.classList.toggle('active');
             });
 
-            async function checkAPIConnection() {
-                try {
-                    console.log('🔌 Checking API connection...');
-                    const response = await fetch(`${API_URL}/health`, {
-                        method: 'GET',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        }
-                    });
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function (e) {
+                if (!e.target.closest('.multi-select-container')) {
+                    dropdown.classList.remove('open');
+                    arrow.classList.remove('open');
+                    input.classList.remove('active');
+                }
+            });
 
-                    console.log('🔌 Health check response status:', response.status);
+            // Handle select all checkbox
+            document.getElementById('selectAllClusters').addEventListener('change', function () {
+                const checkboxes = dropdown.querySelectorAll('input[type="checkbox"]:not(#selectAllClusters):not(:disabled)');
+                checkboxes.forEach(cb => {
+                    cb.checked = this.checked;
+                });
+                updateSelectedClusters();
+            });
 
-                    if (response.ok) {
-                        const data = await response.json();
-                        console.log('✅ API health check successful:', data);
-                        apiAvailable = true;
-                        showSuccessMessage('Connected to Snowflake API successfully!');
-                        console.log('📋 Loading filter options...');
-                        await loadFilterOptions();
-                        console.log('📊 Fetching initial data...');
-                        fetchData();
+            // Add submarket change listener for cascading filter
+            document.getElementById('submarket').addEventListener('change', function () {
+                handleSubmarketChange(this.value);
+            });
+        }
+
+        // Handle submarket change event - Using CSV-based mapping
+        function handleSubmarketChange(submarket) {
+            console.log('🏙️ Submarket changed to:', submarket || 'All');
+
+            // Clear current cluster selection
+            selectedClusters = [];
+            
+            const dropdown = document.getElementById('cqeClusterDropdown');
+            const selectAllOption = dropdown.querySelector('.multi-select-all');
+            
+            // Clear dropdown except for Select All option
+            dropdown.innerHTML = '';
+            dropdown.appendChild(selectAllOption);
+
+            if (!submarket || submarket === '') {
+                // No submarket selected, show all clusters
+                currentSubmarketClusters = allClusters;
+                document.getElementById('cqeClusterInput').classList.remove('filtered');
+                
+                // Repopulate with all clusters
+                populateMultiSelect('cqeCluster', allClusters);
+                
+                console.log('📍 Showing all clusters:', allClusters.length);
+            } else {
+                // Check if we have CSV mapping for this submarket
+                if (submarketClusters && submarketClusters[submarket] && submarketClusters[submarket].length > 0) {
+                    // Use CSV mapping for this submarket
+                    currentSubmarketClusters = submarketClusters[submarket];
+                    console.log(`📍 Found ${currentSubmarketClusters.length} clusters for ${submarket} in CSV mapping`);
+                    
+                    document.getElementById('cqeClusterInput').classList.add('filtered');
+                } else {
+                    // No CSV mapping for this submarket - show ALL clusters
+                    currentSubmarketClusters = allClusters;
+                    console.log(`⚠️ No CSV mapping for ${submarket}, showing all ${allClusters.length} clusters`);
+                    
+                    document.getElementById('cqeClusterInput').classList.remove('filtered');
+                }
+                
+                // Repopulate with appropriate clusters
+                populateMultiSelect('cqeCluster', currentSubmarketClusters);
+            }
+
+            // Reset select all checkbox
+            document.getElementById('selectAllClusters').checked = false;
+            document.getElementById('selectAllClusters').indeterminate = false;
+            
+            // Update the display
+            updateSelectedClusters();
+            
+            console.log(`📊 Current available clusters:`, currentSubmarketClusters);
+        }
+
+        // Update selected clusters array and display
+        function updateSelectedClusters() {
+            const dropdown = document.getElementById('cqeClusterDropdown');
+            const checkboxes = dropdown.querySelectorAll('input[type="checkbox"]:not(#selectAllClusters):checked');
+            const visibleCheckboxes = dropdown.querySelectorAll('input[type="checkbox"]:not(#selectAllClusters):not(:disabled)');
+            const selectAllCheckbox = document.getElementById('selectAllClusters');
+            const textElement = document.getElementById('cqeClusterText');
+            const countElement = document.getElementById('clusterCount');
+
+            selectedClusters = Array.from(checkboxes).map(cb => cb.value);
+
+            // Update select all checkbox state
+            if (visibleCheckboxes.length > 0) {
+                if (checkboxes.length === visibleCheckboxes.length) {
+                    selectAllCheckbox.checked = true;
+                    selectAllCheckbox.indeterminate = false;
+                } else if (checkboxes.length > 0) {
+                    selectAllCheckbox.checked = false;
+                    selectAllCheckbox.indeterminate = true;
+                } else {
+                    selectAllCheckbox.checked = false;
+                    selectAllCheckbox.indeterminate = false;
+                }
+            }
+
+            // Update display text
+            const submarket = document.getElementById('submarket').value;
+            
+            if (currentSubmarketClusters.length === 0) {
+                textElement.textContent = 'No clusters available';
+                countElement.style.display = 'none';
+            } else if (selectedClusters.length === 0 || selectedClusters.length === currentSubmarketClusters.length) {
+                if (submarket) {
+                    textElement.textContent = `All ${currentSubmarketClusters.length} clusters in ${submarket}`;
+                } else {
+                    textElement.textContent = 'All Clusters';
+                }
+                countElement.style.display = 'none';
+            } else if (selectedClusters.length === 1) {
+                textElement.textContent = selectedClusters[0];
+                countElement.style.display = 'none';
+            } else {
+                textElement.textContent = `${selectedClusters.length} clusters selected`;
+                countElement.textContent = selectedClusters.length;
+                countElement.style.display = 'inline-block';
+            }
+        }
+
+        // Populate multi-select dropdown with options
+        function populateMultiSelect(elementId, options) {
+            const dropdown = document.getElementById(`${elementId}Dropdown`);
+
+            // Keep the select all option
+            const selectAllOption = dropdown.querySelector('.multi-select-all');
+            
+            // Clear everything except select all
+            while (dropdown.children.length > 1) {
+                dropdown.removeChild(dropdown.lastChild);
+            }
+
+            if (options && options.length > 0) {
+                options.forEach(option => {
+                    const div = document.createElement('div');
+                    div.className = 'multi-select-option';
+
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.id = `cluster_${option.replace(/\s/g, '_')}`;
+                    checkbox.value = option;
+                    checkbox.addEventListener('change', updateSelectedClusters);
+
+                    const label = document.createElement('label');
+                    label.setAttribute('for', checkbox.id);
+                    label.textContent = option;
+
+                    div.appendChild(checkbox);
+                    div.appendChild(label);
+                    dropdown.appendChild(div);
+                });
+            } else {
+                // Show message if no clusters available
+                const div = document.createElement('div');
+                div.className = 'multi-select-option';
+                div.style.fontStyle = 'italic';
+                div.style.color = '#718096';
+                div.style.cursor = 'default';
+                div.textContent = 'No clusters available for this submarket';
+                dropdown.appendChild(div);
+            }
+        }
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function () {
+            console.log('🚀 Dashboard initializing with cascading filters...');
+            setDefaultDates();
+            initializeMultiSelect();
+            checkAPIConnection();
+
+            // Add event listener for sorting criteria change
+            document.getElementById('sortingCriteria').addEventListener('change', function () {
+                console.log('📊 Ranking criteria changed to:', this.value);
+                console.log('🔄 Fetching fresh data from Snowflake...');
+                const indicator = document.getElementById('freshDataIndicator');
+                indicator.style.display = 'inline-block';
+                setTimeout(() => indicator.style.display = 'none', 3000);
+                fetchData();
+            });
+
+            // Add Enter key event listener for USID input field
+            document.getElementById('usid').addEventListener('keypress', function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const usidValue = this.value.trim();
+                    if (usidValue) {
+                        window.open(`usid_detail.html?usid=${encodeURIComponent(usidValue)}`, '_blank');
+                        this.value = '';
                     } else {
-                        console.error('❌ API health check failed with status:', response.status);
-                        handleAPIError();
+                        fetchData();
                     }
-                } catch (error) {
-                    console.error('❌ API connection error:', error);
+                }
+            });
+        });
+
+        async function checkAPIConnection() {
+            try {
+                console.log('🔌 Checking API connection...');
+                const response = await fetch(`${API_URL}/health`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                console.log('🔌 Health check response status:', response.status);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('✅ API health check successful:', data);
+                    apiAvailable = true;
+                    showSuccessMessage('Connected to Snowflake API successfully!');
+                    console.log('📋 Loading filter options...');
+                    await loadFilterOptions();
+                    console.log('📊 Fetching initial data...');
+                    fetchData();
+                } else {
+                    console.error('❌ API health check failed with status:', response.status);
                     handleAPIError();
                 }
+            } catch (error) {
+                console.error('❌ API connection error:', error);
+                handleAPIError();
             }
+        }
 
-            function handleAPIError() {
-                console.log('🔄 Handling API error - switching to sample data');
-                apiAvailable = false;
-                showErrorMessage('Flask API is not running. Using sample data. <br>To connect to Snowflake: <br>1. Run: python app.py <br>2. Refresh this page');
-                useSampleData();
-                setTimeout(() => {
-                    console.log('📊 Loading sample data after API error...');
-                    fetchData();
-                }, 1000);
-            }
+        function handleAPIError() {
+            console.log('🔄 Handling API error - switching to sample data');
+            apiAvailable = false;
+            showErrorMessage('Flask API is not running. Using sample data. <br>To connect to Snowflake: <br>1. Run: python app.py <br>2. Refresh this page');
+            useSampleData();
+            setTimeout(() => {
+                console.log('📊 Loading sample data after API error...');
+                fetchData();
+            }, 1000);
+        }
 
-            function showErrorMessage(message) {
-                const alertDiv = document.createElement('div');
-                alertDiv.className = 'error-message';
-                alertDiv.innerHTML = message;
-                document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.filters-section'));
-                setTimeout(() => alertDiv.remove(), 10000);
-            }
+        function showErrorMessage(message) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'error-message';
+            alertDiv.innerHTML = message;
+            document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.filters-section'));
+            setTimeout(() => alertDiv.remove(), 10000);
+        }
 
-            function showSuccessMessage(message) {
-                const alertDiv = document.createElement('div');
-                alertDiv.className = 'success-message';
-                alertDiv.innerHTML = message;
-                document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.filters-section'));
-                setTimeout(() => alertDiv.remove(), 5000);
-            }
+        function showSuccessMessage(message) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'success-message';
+            alertDiv.innerHTML = message;
+            document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.filters-section'));
+            setTimeout(() => alertDiv.remove(), 5000);
+        }
 
-            function setDefaultDates() {
-                const today = new Date();
-                const twoDaysAgo = new Date(today.getTime() - 2 * 24 * 60 * 60 * 1000);
+        function setDefaultDates() {
+            const today = new Date();
+            const twoDaysAgo = new Date(today.getTime() - 2 * 24 * 60 * 60 * 1000);
 
-                document.getElementById('periodEnd').value = today.toISOString().split('T')[0];
-                document.getElementById('periodStart').value = twoDaysAgo.toISOString().split('T')[0];
-            }
+            document.getElementById('periodEnd').value = today.toISOString().split('T')[0];
+            document.getElementById('periodStart').value = twoDaysAgo.toISOString().split('T')[0];
+        }
 
-            async function loadFilterOptions() {
-                try {
-                    console.log('📋 Loading filter options...');
-                    const response = await fetch(`${API_URL}/filters`);
+        async function loadFilterOptions() {
+            try {
+                console.log('📋 Loading filter options...');
+                const response = await fetch(`${API_URL}/filters`);
 
-                    console.log('📋 Filters response status:', response.status);
+                console.log('📋 Filters response status:', response.status);
 
-                    if (response.ok) {
-                        const data = await response.json();
-                        console.log('📋 Filters data received:', data);
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('📋 Filters data received:', data);
 
-                        if (data.metricMapping) {
-                            metricMapping = data.metricMapping;
-                            console.log('🔧 Metric mapping stored:', Object.keys(metricMapping).length, 'metrics');
-                        }
-
-                        // Store submarket-cluster relationships - THIS IS THE KEY PART
-                        if (data.submarketClusters) {
-                            submarketClusters = data.submarketClusters;
-                            console.log('🏙️ Submarket-cluster relationships loaded:', Object.keys(submarketClusters).length, 'submarkets');
-
-                            // Log the relationships for debugging
-                            Object.keys(submarketClusters).forEach(submarket => {
-                                console.log(`  ${submarket}: ${submarketClusters[submarket].length} clusters`);
-                            });
-                        }
-
-                        // Store all clusters
-                        allClusters = data.cqeClusters || [];
-                        currentSubmarketClusters = allClusters;
-                        console.log('📍 Total clusters available:', allClusters.length);
-
-                        console.log('📋 Populating filter dropdowns...');
-                        populateSelect('submarket', data.submarkets);
-                        populateMultiSelect('cqeCluster', data.cqeClusters);
-                        populateSelect('metricName', data.metricNames);
-                        console.log('✅ Filter options loaded successfully');
-                    } else {
-                        console.error('❌ Filter options API error:', response.status);
-                        useSampleData();
+                    if (data.metricMapping) {
+                        metricMapping = data.metricMapping;
+                        console.log('🔧 Metric mapping stored:', Object.keys(metricMapping).length, 'metrics');
                     }
-                } catch (error) {
-                    console.error('❌ Error loading filters:', error);
+
+                    // Store submarket-cluster relationships - THIS IS THE KEY PART
+                    if (data.submarketClusters) {
+                        submarketClusters = data.submarketClusters;
+                        console.log('🏙️ Submarket-cluster relationships loaded:', Object.keys(submarketClusters).length, 'submarkets');
+                        
+                        // Log the relationships for debugging
+                        Object.keys(submarketClusters).forEach(submarket => {
+                            console.log(`  ${submarket}: ${submarketClusters[submarket].length} clusters`);
+                        });
+                    }
+
+                    // Store all clusters
+                    allClusters = data.cqeClusters || [];
+                    currentSubmarketClusters = allClusters;
+                    console.log('📍 Total clusters available:', allClusters.length);
+
+                    console.log('📋 Populating filter dropdowns...');
+                    populateSelect('submarket', data.submarkets);
+                    populateMultiSelect('cqeCluster', data.cqeClusters);
+                    populateSelect('metricName', data.metricNames);
+                    console.log('✅ Filter options loaded successfully');
+                } else {
+                    console.error('❌ Filter options API error:', response.status);
                     useSampleData();
                 }
+            } catch (error) {
+                console.error('❌ Error loading filters:', error);
+                useSampleData();
+            }
+        }
+
+        function populateSelect(elementId, options) {
+            const select = document.getElementById(elementId);
+            select.innerHTML = '<option value="">All</option>';
+
+            if (options && options.length > 0) {
+                options.forEach(option => {
+                    const opt = document.createElement('option');
+                    opt.value = option;
+                    opt.textContent = option;
+                    select.appendChild(opt);
+                });
+            }
+        }
+
+        async function fetchData() {
+            const sortingCriteria = document.getElementById('sortingCriteria').value;
+            const clusterValues = selectedClusters.length > 0 ? selectedClusters.join(',') : '';
+
+            const filters = {
+                submarket: document.getElementById('submarket').value,
+                cqeClusters: clusterValues,
+                periodStart: document.getElementById('periodStart').value,
+                periodEnd: document.getElementById('periodEnd').value,
+                metricName: document.getElementById('metricName').value,
+                usid: document.getElementById('usid').value,
+                sortingCriteria: sortingCriteria
+            };
+
+            console.log('🔄 Starting fetchData with filters:', filters);
+            console.log('📊 Ranking criteria:', sortingCriteria);
+            console.log('📍 Selected clusters:', selectedClusters);
+            showLoading();
+
+            if (!apiAvailable) {
+                console.log('⚠️ API not available, using sample data');
+                generateSampleData();
+                return;
             }
 
-            function populateSelect(elementId, options) {
-                const select = document.getElementById(elementId);
-                select.innerHTML = '<option value="">All</option>';
+            try {
+                const queryParams = new URLSearchParams(filters).toString();
+                const url = `${API_URL}/data?${queryParams}`;
+                console.log('📡 Fetching data from:', url);
 
-                if (options && options.length > 0) {
-                    options.forEach(option => {
-                        const opt = document.createElement('option');
-                        opt.value = option;
-                        opt.textContent = option;
-                        select.appendChild(opt);
+                const startTime = performance.now();
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const endTime = performance.now();
+
+                console.log(`⏱️ API response received in ${(endTime - startTime) / 1000}s with status:`, response.status);
+
+                if (response.ok) {
+                    console.log('✅ Response OK, parsing JSON...');
+                    const responseText = await response.text();
+                    console.log(`📊 Response size: ${responseText.length} characters`);
+
+                    try {
+                        const data = JSON.parse(responseText);
+                        console.log(`✅ JSON parsed successfully. Type: ${typeof data}, Length: ${Array.isArray(data) ? data.length : 'N/A'}`);
+
+                        if (Array.isArray(data)) {
+                            console.log(`📈 Data is array with ${data.length} records`);
+                            console.log(`🎯 Data is sorted by ${sortingCriteria} at the database level`);
+                            if (data.length > 0) {
+                                console.log('🔍 First record keys:', Object.keys(data[0]));
+                            }
+                            currentData = data;
+                            updateDashboard(data);
+                        } else if (data.error) {
+                            console.error('❌ API returned error:', data.error);
+                            showErrorMessage(`API Error: ${data.error}`);
+                            generateSampleData();
+                        } else {
+                            console.error('❌ Unexpected data format:', typeof data);
+                            showErrorMessage('Unexpected data format received from API');
+                            generateSampleData();
+                        }
+                    } catch (jsonError) {
+                        console.error('❌ JSON parsing failed:', jsonError);
+                        console.error('Raw response (first 500 chars):', responseText.substring(0, 500));
+                        showErrorMessage(`Invalid JSON response: ${jsonError.message}`);
+                        generateSampleData();
+                    }
+                } else {
+                    console.error('❌ API returned error status:', response.status);
+                    const errorText = await response.text();
+                    console.error('Error response:', errorText);
+                    showErrorMessage(`API Error: ${response.status} - ${errorText}`);
+                    generateSampleData();
+                }
+            } catch (error) {
+                console.error('❌ Fetch error:', error);
+                if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                    showErrorMessage('Cannot connect to API - make sure Flask server is running');
+                } else if (error.name === 'AbortError' || error.message.includes('timeout')) {
+                    showErrorMessage('Request timeout - try a smaller date range');
+                } else {
+                    showErrorMessage(`Network error: ${error.message}`);
+                }
+                generateSampleData();
+            }
+        }
+
+        function generateSampleData() {
+            const sampleData = [];
+            const metrics = ['V-CDR', 'NS/ESO', 'Quality RSRP', 'Quality RSRQ', 'V-ACC', 'V-ACC-E2E', 'D-ACC', 'DLTPUT', 'ULTPUT', 'D-RET', 'WIFI-RET'];
+            const vendors = ['Nokia', 'Ericsson', 'Huawei', 'Samsung'];
+            const clusters = ['CQE_EAST', 'CQE_WEST', 'CQE_CENTRAL', 'CQE_SOUTH', 'CQE_NORTH'];
+            const submarkets = ['NYC', 'LA', 'Chicago', 'Houston', 'Phoenix'];
+
+            // Sample submarket-cluster relationships for demo
+            submarketClusters = {
+                'NYC': ['CQE_EAST', 'CQE_NORTH'],
+                'LA': ['CQE_WEST'],
+                'Chicago': ['CQE_CENTRAL', 'CQE_NORTH'],
+                'Houston': ['CQE_SOUTH', 'CQE_CENTRAL'],
+                'Phoenix': ['CQE_WEST', 'CQE_SOUTH']
+            };
+
+            const selectedMetric = document.getElementById('metricName').value;
+            const selectedSubmarket = document.getElementById('submarket').value;
+
+            // Filter clusters based on selection and submarket
+            let availableClusters = clusters;
+            if (selectedSubmarket && submarketClusters[selectedSubmarket]) {
+                availableClusters = submarketClusters[selectedSubmarket];
+            }
+
+            const filteredClusters = selectedClusters.length > 0 ?
+                availableClusters.filter(c => selectedClusters.includes(c)) : availableClusters;
+
+            if (!selectedMetric) {
+                for (let i = 0; i < 50; i++) {
+                    const usid = `US${10000 + i}`;
+
+                    let avgFailures;
+                    const rand = Math.random();
+                    if (rand > 0.95) {
+                        avgFailures = Math.floor(Math.random() * 30000) + 10000;
+                    } else if (rand > 0.8) {
+                        avgFailures = Math.floor(Math.random() * 5000) + 1000;
+                    } else if (rand > 0.5) {
+                        avgFailures = Math.floor(Math.random() * 500) + 100;
+                    } else {
+                        avgFailures = Math.floor(Math.random() * 100);
+                    }
+
+                    const recordCount = Math.floor(Math.random() * 100) + 20;
+                    const totalFailures = avgFailures * recordCount;
+
+                    const baseContrib = (Math.random() - 0.6) * 0.1;
+                    const avgContribution = parseFloat(baseContrib.toFixed(4));
+                    const totalContribution = avgContribution * recordCount;
+
+                    sampleData.push({
+                        USID: usid,
+                        METRICNAME: 'ALL',
+                        METRIC_DISPLAY: 'All',
+                        AVG_EXTRAFAILURES: avgFailures,
+                        TOTAL_EXTRAFAILURES: totalFailures,
+                        AVG_IDXCONTR: avgContribution,
+                        TOTAL_IDXCONTR: totalContribution,
+                        IDXCONTR: avgContribution,
+                        RECORD_COUNT: recordCount,
+                        EXTRAFAILURES: avgFailures,
+                        VENDOR: vendors[Math.floor(Math.random() * vendors.length)],
+                        CQECLUSTER: filteredClusters[Math.floor(Math.random() * filteredClusters.length)],
+                        SUBMKT: selectedSubmarket || submarkets[Math.floor(Math.random() * submarkets.length)],
+                        EARLIEST_PERIOD: new Date(Date.now() - recordCount * 24 * 60 * 60 * 1000).toISOString(),
+                        LATEST_PERIOD: new Date().toISOString()
                     });
                 }
             }
 
-            async function fetchData() {
-                const sortingCriteria = document.getElementById('sortingCriteria').value;
-                const clusterValues = selectedClusters.length > 0 ? selectedClusters.join(',') : '';
+            // Update filter dropdowns
+            allClusters = clusters;
+            currentSubmarketClusters = availableClusters;
 
-                const filters = {
-                    submarket: document.getElementById('submarket').value,
-                    cqeClusters: clusterValues,
-                    periodStart: document.getElementById('periodStart').value,
-                    periodEnd: document.getElementById('periodEnd').value,
-                    metricName: document.getElementById('metricName').value,
-                    usid: document.getElementById('usid').value,
-                    sortingCriteria: sortingCriteria
-                };
+            populateSelect('submarket', submarkets);
+            populateMultiSelect('cqeCluster', availableClusters);
+            populateSelect('metricName', metrics);
 
-                console.log('🔄 Starting fetchData with filters:', filters);
-                console.log('📊 Ranking criteria:', sortingCriteria);
-                console.log('📍 Selected clusters:', selectedClusters);
-                showLoading();
+            currentData = sampleData;
+            updateDashboard(sampleData);
+        }
 
-                if (!apiAvailable) {
-                    console.log('⚠️ API not available, using sample data');
-                    generateSampleData();
+        function useSampleData() {
+            generateSampleData();
+        }
+
+        function updateDashboard(data) {
+            console.log('🔄 Updating dashboard with data:', data);
+
+            try {
+                if (!Array.isArray(data)) {
+                    console.error('❌ Data is not an array:', typeof data);
+                    showErrorMessage('Invalid data format received');
                     return;
                 }
 
-                try {
-                    const queryParams = new URLSearchParams(filters).toString();
-                    const url = `${API_URL}/data?${queryParams}`;
-                    console.log('📡 Fetching data from:', url);
+                console.log(`📊 Processing ${data.length} records`);
+                currentData = data;
+                displayData = [...data];  // Create a copy for display
+                hideLoading();
 
-                    const startTime = performance.now();
-                    const response = await fetch(url, {
-                        method: 'GET',
-                        headers: {
-                            'Content-Type': 'application/json'
+                updateTable(displayData);
+
+                console.log('✅ Dashboard update complete');
+            } catch (error) {
+                console.error('❌ Error updating dashboard:', error);
+                showErrorMessage(`Error updating dashboard: ${error.message}`);
+                hideLoading();
+            }
+        }
+
+        // Sort data by column
+        function sortData(column, direction) {
+            displayData.sort((a, b) => {
+                let aVal = a[column];
+                let bVal = b[column];
+
+                // Handle numeric columns
+                if (column === 'IDXCONTR' || column === 'AVG_IDXCONTR' || 
+                    column === 'TOTAL_EXTRAFAILURES' || column === 'EXTRAFAILURES' ||
+                    column === 'RECORD_COUNT') {
+                    aVal = Number(aVal) || 0;
+                    bVal = Number(bVal) || 0;
+                } 
+                // Handle string columns
+                else if (typeof aVal === 'string') {
+                    aVal = aVal.toLowerCase();
+                    bVal = bVal ? bVal.toLowerCase() : '';
+                }
+
+                if (direction === 'asc') {
+                    return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+                } else {
+                    return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
+                }
+            });
+
+            currentSort = { column, direction };
+            updateTable(displayData);
+        }
+
+        // Filter data by column values
+        function filterData() {
+            displayData = [...currentData];
+
+            // Apply filters
+            Object.keys(columnFilters).forEach(column => {
+                const filterValues = columnFilters[column];
+                if (filterValues && filterValues.length > 0) {
+                    displayData = displayData.filter(row => {
+                        const value = row[column] || '';
+                        return filterValues.includes(value.toString());
+                    });
+                }
+            });
+
+            // Reapply current sort if exists
+            if (currentSort.column) {
+                sortData(currentSort.column, currentSort.direction);
+            } else {
+                updateTable(displayData);
+            }
+        }
+
+        // Create sort/filter menu for a column
+        function createSortMenu(column, columnIndex, uniqueValues) {
+            const menu = document.createElement('div');
+            menu.className = 'sort-menu';
+            menu.id = `sort-menu-${columnIndex}`;
+
+            // Sort options
+            const sortHeader = document.createElement('div');
+            sortHeader.className = 'sort-menu-header';
+            sortHeader.textContent = 'Sort';
+            menu.appendChild(sortHeader);
+
+            const ascItem = document.createElement('div');
+            ascItem.className = 'sort-menu-item';
+            ascItem.textContent = '↑ Ascending';
+            ascItem.onclick = (e) => {
+                e.stopPropagation();
+                sortData(column, 'asc');
+                closeAllSortMenus();
+                document.querySelectorAll('th').forEach(th => th.classList.remove('sorted-asc', 'sorted-desc'));
+                document.querySelector(`th:nth-child(${columnIndex + 1})`).classList.add('sorted-asc');
+            };
+            menu.appendChild(ascItem);
+
+            const descItem = document.createElement('div');
+            descItem.className = 'sort-menu-item';
+            descItem.textContent = '↓ Descending';
+            descItem.onclick = (e) => {
+                e.stopPropagation();
+                sortData(column, 'desc');
+                closeAllSortMenus();
+                document.querySelectorAll('th').forEach(th => th.classList.remove('sorted-asc', 'sorted-desc'));
+                document.querySelector(`th:nth-child(${columnIndex + 1})`).classList.add('sorted-desc');
+            };
+            menu.appendChild(descItem);
+
+            // Add filter options if there are unique values
+            if (uniqueValues && uniqueValues.length > 0 && uniqueValues.length <= 20) {
+                const divider = document.createElement('div');
+                divider.className = 'sort-menu-divider';
+                menu.appendChild(divider);
+
+                const filterHeader = document.createElement('div');
+                filterHeader.className = 'sort-menu-header';
+                filterHeader.textContent = 'Filter';
+                menu.appendChild(filterHeader);
+
+                uniqueValues.forEach(value => {
+                    const filterItem = document.createElement('div');
+                    filterItem.className = 'sort-menu-item';
+                    
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.className = 'filter-checkbox';
+                    checkbox.value = value;
+                    checkbox.checked = !columnFilters[column] || columnFilters[column].length === 0 || 
+                                      columnFilters[column].includes(value.toString());
+                    
+                    checkbox.onclick = (e) => {
+                        e.stopPropagation();
+                        
+                        if (!columnFilters[column]) {
+                            columnFilters[column] = [];
+                        }
+
+                        if (checkbox.checked) {
+                            // Add to filter
+                            if (!columnFilters[column].includes(value.toString())) {
+                                columnFilters[column].push(value.toString());
+                            }
+                        } else {
+                            // Remove from filter
+                            const index = columnFilters[column].indexOf(value.toString());
+                            if (index > -1) {
+                                columnFilters[column].splice(index, 1);
+                            }
+                        }
+
+                        // If all are selected, remove the filter
+                        if (columnFilters[column].length === uniqueValues.length || 
+                            columnFilters[column].length === 0) {
+                            delete columnFilters[column];
+                        }
+
+                        filterData();
+                    };
+
+                    const label = document.createElement('label');
+                    label.style.cursor = 'pointer';
+                    label.style.display = 'flex';
+                    label.style.alignItems = 'center';
+                    label.appendChild(checkbox);
+                    label.appendChild(document.createTextNode(value || '(empty)'));
+
+                    filterItem.appendChild(label);
+                    filterItem.onclick = (e) => {
+                        e.stopPropagation();
+                        checkbox.click();
+                    };
+                    
+                    menu.appendChild(filterItem);
+                });
+            }
+
+            return menu;
+        }
+
+        // Close all sort menus
+        function closeAllSortMenus() {
+            document.querySelectorAll('.sort-menu').forEach(menu => {
+                menu.classList.remove('open');
+            });
+        }
+
+        // Initialize table headers with click handlers
+        function initializeTableHeaders() {
+            const headers = document.querySelectorAll('#dataTable th');
+            const columnMappings = ['rank', 'USID', 'METRIC_DISPLAY', 'IDXCONTR', 'TOTAL_EXTRAFAILURES', 
+                                   'VENDOR', 'CQECLUSTER', 'severity'];
+
+            headers.forEach((th, index) => {
+                th.style.position = 'relative';
+                
+                th.onclick = (e) => {
+                    e.stopPropagation();
+                    
+                    // Close other menus
+                    document.querySelectorAll('.sort-menu').forEach((menu, menuIndex) => {
+                        if (menuIndex !== index) {
+                            menu.classList.remove('open');
                         }
                     });
-                    const endTime = performance.now();
 
-                    console.log(`⏱️ API response received in ${(endTime - startTime) / 1000}s with status:`, response.status);
-
-                    if (response.ok) {
-                        console.log('✅ Response OK, parsing JSON...');
-                        const responseText = await response.text();
-                        console.log(`📊 Response size: ${responseText.length} characters`);
-
-                        try {
-                            const data = JSON.parse(responseText);
-                            console.log(`✅ JSON parsed successfully. Type: ${typeof data}, Length: ${Array.isArray(data) ? data.length : 'N/A'}`);
-
-                            if (Array.isArray(data)) {
-                                console.log(`📈 Data is array with ${data.length} records`);
-                                console.log(`🎯 Data is sorted by ${sortingCriteria} at the database level`);
-                                if (data.length > 0) {
-                                    console.log('🔍 First record keys:', Object.keys(data[0]));
+                    // Toggle current menu
+                    let menu = document.getElementById(`sort-menu-${index}`);
+                    if (menu) {
+                        menu.classList.toggle('open');
+                    } else {
+                        // Create menu if it doesn't exist
+                        if (index === 0) return; // Skip rank column
+                        
+                        const column = columnMappings[index];
+                        
+                        // Get unique values for filter options (for certain columns)
+                        let uniqueValues = [];
+                        if (column === 'VENDOR' || column === 'CQECLUSTER' || column === 'severity' || column === 'METRIC_DISPLAY') {
+                            uniqueValues = [...new Set(displayData.map(row => {
+                                if (column === 'severity') {
+                                    return row.severity || calculateSeverity(row);
                                 }
-                                currentData = data;
-                                updateDashboard(data);
-                            } else if (data.error) {
-                                console.error('❌ API returned error:', data.error);
-                                showErrorMessage(`API Error: ${data.error}`);
-                                generateSampleData();
-                            } else {
-                                console.error('❌ Unexpected data format:', typeof data);
-                                showErrorMessage('Unexpected data format received from API');
-                                generateSampleData();
-                            }
-                        } catch (jsonError) {
-                            console.error('❌ JSON parsing failed:', jsonError);
-                            console.error('Raw response (first 500 chars):', responseText.substring(0, 500));
-                            showErrorMessage(`Invalid JSON response: ${jsonError.message}`);
-                            generateSampleData();
+                                return row[column] || '';
+                            }))].sort();
                         }
-                    } else {
-                        console.error('❌ API returned error status:', response.status);
-                        const errorText = await response.text();
-                        console.error('Error response:', errorText);
-                        showErrorMessage(`API Error: ${response.status} - ${errorText}`);
-                        generateSampleData();
-                    }
-                } catch (error) {
-                    console.error('❌ Fetch error:', error);
-                    if (error.name === 'TypeError' && error.message.includes('fetch')) {
-                        showErrorMessage('Cannot connect to API - make sure Flask server is running');
-                    } else if (error.name === 'AbortError' || error.message.includes('timeout')) {
-                        showErrorMessage('Request timeout - try a smaller date range');
-                    } else {
-                        showErrorMessage(`Network error: ${error.message}`);
-                    }
-                    generateSampleData();
-                }
-            }
 
-            function generateSampleData() {
-                const sampleData = [];
-                const metrics = ['V-CDR', 'NS/ESO', 'Quality RSRP', 'Quality RSRQ', 'V-ACC', 'V-ACC-E2E', 'D-ACC', 'DLTPUT', 'ULTPUT', 'D-RET', 'WIFI-RET'];
-                const vendors = ['Nokia', 'Ericsson', 'Huawei', 'Samsung'];
-                const clusters = ['CQE_EAST', 'CQE_WEST', 'CQE_CENTRAL', 'CQE_SOUTH', 'CQE_NORTH'];
-                const submarkets = ['NYC', 'LA', 'Chicago', 'Houston', 'Phoenix'];
-
-                // Sample submarket-cluster relationships for demo
-                submarketClusters = {
-                    'NYC': ['CQE_EAST', 'CQE_NORTH'],
-                    'LA': ['CQE_WEST'],
-                    'Chicago': ['CQE_CENTRAL', 'CQE_NORTH'],
-                    'Houston': ['CQE_SOUTH', 'CQE_CENTRAL'],
-                    'Phoenix': ['CQE_WEST', 'CQE_SOUTH']
+                        menu = createSortMenu(column, index, uniqueValues);
+                        th.appendChild(menu);
+                        menu.classList.add('open');
+                    }
                 };
+            });
 
-                const selectedMetric = document.getElementById('metricName').value;
-                const selectedSubmarket = document.getElementById('submarket').value;
-
-                // Filter clusters based on selection and submarket
-                let availableClusters = clusters;
-                if (selectedSubmarket && submarketClusters[selectedSubmarket]) {
-                    availableClusters = submarketClusters[selectedSubmarket];
+            // Close menus when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('th') && !e.target.closest('.sort-menu')) {
+                    closeAllSortMenus();
                 }
+            });
+        }
 
-                const filteredClusters = selectedClusters.length > 0 ?
-                    availableClusters.filter(c => selectedClusters.includes(c)) : availableClusters;
-
-                if (!selectedMetric) {
-                    for (let i = 0; i < 50; i++) {
-                        const usid = `US${10000 + i}`;
-
-                        let avgFailures;
-                        const rand = Math.random();
-                        if (rand > 0.95) {
-                            avgFailures = Math.floor(Math.random() * 30000) + 10000;
-                        } else if (rand > 0.8) {
-                            avgFailures = Math.floor(Math.random() * 5000) + 1000;
-                        } else if (rand > 0.5) {
-                            avgFailures = Math.floor(Math.random() * 500) + 100;
-                        } else {
-                            avgFailures = Math.floor(Math.random() * 100);
-                        }
-
-                        const recordCount = Math.floor(Math.random() * 100) + 20;
-                        const totalFailures = avgFailures * recordCount;
-
-                        const baseContrib = (Math.random() - 0.6) * 0.1;
-                        const avgContribution = parseFloat(baseContrib.toFixed(4));
-                        const totalContribution = avgContribution * recordCount;
-
-                        sampleData.push({
-                            USID: usid,
-                            METRICNAME: 'ALL',
-                            METRIC_DISPLAY: 'All',
-                            AVG_EXTRAFAILURES: avgFailures,
-                            TOTAL_EXTRAFAILURES: totalFailures,
-                            AVG_IDXCONTR: avgContribution,
-                            TOTAL_IDXCONTR: totalContribution,
-                            IDXCONTR: avgContribution,
-                            RECORD_COUNT: recordCount,
-                            EXTRAFAILURES: avgFailures,
-                            VENDOR: vendors[Math.floor(Math.random() * vendors.length)],
-                            CQECLUSTER: filteredClusters[Math.floor(Math.random() * filteredClusters.length)],
-                            SUBMKT: selectedSubmarket || submarkets[Math.floor(Math.random() * submarkets.length)],
-                            EARLIEST_PERIOD: new Date(Date.now() - recordCount * 24 * 60 * 60 * 1000).toISOString(),
-                            LATEST_PERIOD: new Date().toISOString()
-                        });
-                    }
-                }
-
-                // Update filter dropdowns
-                allClusters = clusters;
-                currentSubmarketClusters = availableClusters;
-
-                populateSelect('submarket', submarkets);
-                populateMultiSelect('cqeCluster', availableClusters);
-                populateSelect('metricName', metrics);
-
-                currentData = sampleData;
-                updateDashboard(sampleData);
+        // Calculate severity for filtering
+        function calculateSeverity(row) {
+            const sortingCriteria = document.getElementById('sortingCriteria').value;
+            
+            // Calculate total for percentage
+            let datasetTotal = 0;
+            if (sortingCriteria === 'contribution') {
+                datasetTotal = displayData.reduce((sum, r) => {
+                    const contrib = Number(r.IDXCONTR) || Number(r.AVG_IDXCONTR) || 0;
+                    const total = r.TOTAL_IDXCONTR ? Number(r.TOTAL_IDXCONTR) : contrib * (r.RECORD_COUNT || 1);
+                    return sum + Math.abs(total);
+                }, 0);
+            } else {
+                datasetTotal = displayData.reduce((sum, r) => {
+                    const total = r.TOTAL_EXTRAFAILURES ? 
+                        Math.max(0, Number(r.TOTAL_EXTRAFAILURES)) :
+                        Math.max(0, Number(r.AVG_EXTRAFAILURES || r.EXTRAFAILURES) || 0) * (r.RECORD_COUNT || 1);
+                    return sum + (isFinite(total) ? total : 0);
+                }, 0);
             }
 
-            function useSampleData() {
-                generateSampleData();
+            const contribution = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
+            const totalContribution = Number(row.TOTAL_IDXCONTR) || (contribution * (row.RECORD_COUNT || 1));
+            const totalFailures = Math.max(0, Number(row.TOTAL_EXTRAFAILURES) || 
+                                          (Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0) * (row.RECORD_COUNT || 1)));
+
+            let percentageOfTotal;
+            if (sortingCriteria === 'contribution') {
+                percentageOfTotal = datasetTotal !== 0 ? (Math.abs(totalContribution) / datasetTotal) * 100 : 0;
+            } else {
+                percentageOfTotal = datasetTotal > 0 ? (totalFailures / datasetTotal) * 100 : 0;
             }
 
-            function updateDashboard(data) {
-                console.log('🔄 Updating dashboard with data:', data);
+            if (Math.abs(percentageOfTotal) >= 5) return 'CRITICAL';
+            else if (Math.abs(percentageOfTotal) >= 2.5) return 'HIGH';
+            else if (Math.abs(percentageOfTotal) >= 0.5) return 'MEDIUM';
+            else return 'LOW';
+        }
 
-                try {
-                    if (!Array.isArray(data)) {
-                        console.error('❌ Data is not an array:', typeof data);
-                        showErrorMessage('Invalid data format received');
-                        return;
-                    }
+        function updateTable(data) {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
 
-                    console.log(`📊 Processing ${data.length} records`);
-                    hideLoading();
+            const sortingCriteria = document.getElementById('sortingCriteria').value;
 
-                    updateTable(data);
+            const headers = document.querySelectorAll('#dataTable th');
+            headers.forEach(th => {
+                th.style.backgroundColor = '#f7fafc';
+                th.style.fontWeight = '600';
+            });
 
-                    console.log('✅ Dashboard update complete');
-                } catch (error) {
-                    console.error('❌ Error updating dashboard:', error);
-                    showErrorMessage(`Error updating dashboard: ${error.message}`);
-                    hideLoading();
-                }
+            const indicator = document.getElementById('sortingIndicator');
+            if (sortingCriteria === 'contribution') {
+                headers[3].style.backgroundColor = '#e0e7ff';
+                headers[3].style.fontWeight = '700';
+                indicator.textContent = '(by Contribution - Worst First)';
+            } else {
+                headers[4].style.backgroundColor = '#e0e7ff';
+                headers[4].style.fontWeight = '700';
+                indicator.textContent = '(by Total Failures - Highest First)';
             }
 
-            function updateTable(data) {
-                const tbody = document.getElementById('tableBody');
-                tbody.innerHTML = '';
+            // Calculate total for dynamic severity based on selected criteria
+            let datasetTotal = 0;
+            if (sortingCriteria === 'contribution') {
+                datasetTotal = data.reduce((sum, row) => {
+                    const contrib = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
+                    const total = row.TOTAL_IDXCONTR ?
+                        Number(row.TOTAL_IDXCONTR) :
+                        contrib * (row.RECORD_COUNT || 1);
+                    return sum + Math.abs(total);
+                }, 0);
+            } else {
+                datasetTotal = data.reduce((sum, row) => {
+                    const total = row.TOTAL_EXTRAFAILURES ?
+                        Math.max(0, Number(row.TOTAL_EXTRAFAILURES)) :
+                        Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0) * (row.RECORD_COUNT || 1);
+                    return sum + (isFinite(total) ? total : 0);
+                }, 0);
+            }
 
-                const sortingCriteria = document.getElementById('sortingCriteria').value;
+            const sortedData = data.slice(0, 100);
 
-                const headers = document.querySelectorAll('#dataTable th');
-                headers.forEach(th => {
-                    th.style.backgroundColor = '#f7fafc';
-                    th.style.fontWeight = '600';
-                });
+            sortedData.forEach((row, index) => {
+                const tr = document.createElement('tr');
 
-                const indicator = document.getElementById('sortingIndicator');
+                const contribution = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
+                const totalContribution = Number(row.TOTAL_IDXCONTR) || (contribution * (row.RECORD_COUNT || 1));
+
+                const avgFailures = Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0);
+                const totalFailures = Math.max(0, Number(row.TOTAL_EXTRAFAILURES) || (avgFailures * (row.RECORD_COUNT || 1)));
+
+                const validAvg = isFinite(avgFailures) ? Math.round(avgFailures) : 0;
+                const validTotal = isFinite(totalFailures) ? Math.round(totalFailures) : 0;
+
+                let percentageOfTotal;
                 if (sortingCriteria === 'contribution') {
-                    headers[3].style.backgroundColor = '#e0e7ff';
-                    headers[3].style.fontWeight = '700';
-                    indicator.textContent = '(by Contribution - Worst First)';
+                    percentageOfTotal = datasetTotal !== 0 ?
+                        (Math.abs(totalContribution) / datasetTotal) * 100 : 0;
                 } else {
-                    headers[4].style.backgroundColor = '#e0e7ff';
-                    headers[4].style.fontWeight = '700';
-                    indicator.textContent = '(by Total Failures - Highest First)';
+                    percentageOfTotal = datasetTotal > 0 ?
+                        (validTotal / datasetTotal) * 100 : 0;
                 }
 
-                // Calculate total for dynamic severity based on selected criteria
-                let datasetTotal = 0;
-                if (sortingCriteria === 'contribution') {
-                    datasetTotal = data.reduce((sum, row) => {
-                        const contrib = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
-                        const total = row.TOTAL_IDXCONTR ?
-                            Number(row.TOTAL_IDXCONTR) :
-                            contrib * (row.RECORD_COUNT || 1);
-                        return sum + Math.abs(total);
-                    }, 0);
+                let severity, severityClass;
+                if (Math.abs(percentageOfTotal) >= 5) {
+                    severity = 'CRITICAL';
+                    severityClass = 'severity-high';
+                } else if (Math.abs(percentageOfTotal) >= 2.5) {
+                    severity = 'HIGH';
+                    severityClass = 'severity-high';
+                } else if (Math.abs(percentageOfTotal) >= 0.5) {
+                    severity = 'MEDIUM';
+                    severityClass = 'severity-medium';
                 } else {
-                    datasetTotal = data.reduce((sum, row) => {
-                        const total = row.TOTAL_EXTRAFAILURES ?
-                            Math.max(0, Number(row.TOTAL_EXTRAFAILURES)) :
-                            Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0) * (row.RECORD_COUNT || 1);
-                        return sum + (isFinite(total) ? total : 0);
-                    }, 0);
+                    severity = 'LOW';
+                    severityClass = 'severity-low';
                 }
 
-                const sortedData = data.slice(0, 100);
+                // Store severity in row data for filtering
+                row.severity = severity;
 
-                sortedData.forEach((row, index) => {
-                    const tr = document.createElement('tr');
+                const metricDisplay = row.METRIC_DISPLAY || row.METRICNAME || '-';
 
-                    const contribution = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
-                    const totalContribution = Number(row.TOTAL_IDXCONTR) || (contribution * (row.RECORD_COUNT || 1));
+                const contribColor = contribution < 0 ? '#ef4444' : '#22c55e';
+                const contribDisplay = formatContribution(contribution);
+                const contribTitle = `Contribution: ${contribution} | Total: ${totalContribution}`;
+                const contribCell = `<strong title="${contribTitle}" style="color: ${contribColor}">${contribDisplay}</strong>`;
 
-                    const avgFailures = Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0);
-                    const totalFailures = Math.max(0, Number(row.TOTAL_EXTRAFAILURES) || (avgFailures * (row.RECORD_COUNT || 1)));
+                const totalFailuresCell = `<strong title="Total: ${formatFullNumber(validTotal)} failures">${formatCompactNumber(validTotal)}</strong>`;
 
-                    const validAvg = isFinite(avgFailures) ? Math.round(avgFailures) : 0;
-                    const validTotal = isFinite(totalFailures) ? Math.round(totalFailures) : 0;
-
-                    let percentageOfTotal;
-                    if (sortingCriteria === 'contribution') {
-                        percentageOfTotal = datasetTotal !== 0 ?
-                            (Math.abs(totalContribution) / datasetTotal) * 100 : 0;
-                    } else {
-                        percentageOfTotal = datasetTotal > 0 ?
-                            (validTotal / datasetTotal) * 100 : 0;
-                    }
-
-                    let severity, severityClass;
-                    if (Math.abs(percentageOfTotal) >= 5) {
-                        severity = 'CRITICAL';
-                        severityClass = 'severity-high';
-                    } else if (Math.abs(percentageOfTotal) >= 2.5) {
-                        severity = 'HIGH';
-                        severityClass = 'severity-high';
-                    } else if (Math.abs(percentageOfTotal) >= 0.5) {
-                        severity = 'MEDIUM';
-                        severityClass = 'severity-medium';
-                    } else {
-                        severity = 'LOW';
-                        severityClass = 'severity-low';
-                    }
-
-                    const metricDisplay = row.METRIC_DISPLAY || row.METRICNAME || '-';
-
-                    const contribColor = contribution < 0 ? '#ef4444' : '#22c55e';
-                    const contribDisplay = formatContribution(contribution);
-                    const contribTitle = `Contribution: ${contribution} | Total: ${totalContribution}`;
-                    const contribCell = `<strong title="${contribTitle}" style="color: ${contribColor}">${contribDisplay}</strong>`;
-
-                    const totalFailuresCell = `<strong title="Total: ${formatFullNumber(validTotal)} failures">${formatCompactNumber(validTotal)}</strong>`;
-
-                    tr.innerHTML = `
+                tr.innerHTML = `
                     <td><strong>#${index + 1}</strong></td>
                     <td><a href="usid_detail.html?usid=${row.USID}" target="_blank" class="usid-link">${row.USID || '-'}</a></td>
                     <td>${metricDisplay}</td>
@@ -1241,107 +1583,112 @@
                     <td>${row.CQECLUSTER || '-'}</td>
                     <td><span class="${severityClass}" title="${Math.abs(percentageOfTotal).toFixed(2)}% of total">${severity}</span></td>
                 `;
-                    tbody.appendChild(tr);
-                });
+                tbody.appendChild(tr);
+            });
+
+            // Initialize table headers for sorting/filtering on first load
+            if (!document.querySelector('.sort-menu')) {
+                initializeTableHeaders();
+            }
+        }
+
+        function resetFilters() {
+            document.getElementById('submarket').value = '';
+
+            // Reset cascading filter
+            currentSubmarketClusters = allClusters;
+            document.getElementById('cqeClusterInput').classList.remove('filtered');
+
+            // Reset multi-select clusters
+            const checkboxes = document.querySelectorAll('#cqeClusterDropdown input[type="checkbox"]');
+            checkboxes.forEach(cb => cb.checked = false);
+            selectedClusters = [];
+
+            // Repopulate with all clusters
+            populateMultiSelect('cqeCluster', allClusters);
+            updateSelectedClusters();
+
+            document.getElementById('metricName').value = '';
+            document.getElementById('usid').value = '';
+            document.getElementById('sortingCriteria').value = 'contribution';
+            setDefaultDates();
+            fetchData();
+        }
+
+        function exportData() {
+            if (currentData.length === 0) {
+                alert('No data to export');
+                return;
             }
 
-            function resetFilters() {
-                document.getElementById('submarket').value = '';
+            const sortingCriteria = document.getElementById('sortingCriteria').value;
+            const isShowingAllMetrics = currentData.length > 0 &&
+                (currentData[0].METRIC_DISPLAY === 'All' || currentData[0].METRICNAME === 'ALL');
 
-                // Reset cascading filter
-                currentSubmarketClusters = allClusters;
-                document.getElementById('cqeClusterInput').classList.remove('filtered');
+            const sortedData = currentData;
 
-                // Reset multi-select clusters
-                const checkboxes = document.querySelectorAll('#cqeClusterDropdown input[type="checkbox"]');
-                checkboxes.forEach(cb => cb.checked = false);
-                selectedClusters = [];
+            const exportData = sortedData.map((row, index) => {
+                const contribution = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
+                const totalContribution = Number(row.TOTAL_IDXCONTR) || contribution;
+                const avgFailures = Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0);
+                const totalFailures = Math.max(0, Number(row.TOTAL_EXTRAFAILURES) || (avgFailures * (row.RECORD_COUNT || 1)));
+                const validAvg = isFinite(avgFailures) ? Math.round(avgFailures) : 0;
+                const validTotal = isFinite(totalFailures) ? Math.round(totalFailures) : 0;
 
-                // Repopulate with all clusters
-                populateMultiSelect('cqeCluster', allClusters);
-                updateSelectedClusters();
+                return {
+                    Rank: index + 1,
+                    USID: row.USID || '',
+                    MetricName: row.METRIC_DISPLAY || row.METRICNAME || '',
+                    Contribution: contribution.toFixed(4),
+                    TotalContribution: totalContribution.toFixed(4),
+                    TotalFailures: validTotal,
+                    RecordCount: row.RECORD_COUNT || 1,
+                    Vendor: row.VENDOR || '',
+                    Cluster: row.CQECLUSTER || '',
+                    Submarket: row.SUBMKT || '',
+                    EarliestPeriod: row.EARLIEST_PERIOD || '',
+                    LatestPeriod: row.LATEST_PERIOD || '',
+                    AggregationType: isShowingAllMetrics ? 'All Metrics' : 'Single Metric',
+                    SortedBy: sortingCriteria === 'contribution' ? 'Contribution (Worst First)' : 'Total Failures (Highest First)'
+                };
+            });
 
-                document.getElementById('metricName').value = '';
-                document.getElementById('usid').value = '';
-                document.getElementById('sortingCriteria').value = 'contribution';
-                setDefaultDates();
-                fetchData();
-            }
+            const headers = Object.keys(exportData[0]);
+            const csvContent = [
+                headers.join(','),
+                ...exportData.map(row => headers.map(h => {
+                    const value = String(row[h] || '');
+                    return value.includes(',') || value.includes('"') || value.includes('\n')
+                        ? `"${value.replace(/"/g, '""')}"`
+                        : value;
+                }).join(','))
+            ].join('\n');
 
-            function exportData() {
-                if (currentData.length === 0) {
-                    alert('No data to export');
-                    return;
-                }
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
 
-                const sortingCriteria = document.getElementById('sortingCriteria').value;
-                const isShowingAllMetrics = currentData.length > 0 &&
-                    (currentData[0].METRIC_DISPLAY === 'All' || currentData[0].METRICNAME === 'ALL');
+            const sortType = sortingCriteria === 'contribution' ? 'contrib_worst_first' : 'failures_highest_first';
+            const fileName = isShowingAllMetrics ?
+                `cqi_offenders_all_metrics_${sortType}_${new Date().toISOString().split('T')[0]}.csv` :
+                `cqi_offenders_filtered_${sortType}_${new Date().toISOString().split('T')[0]}.csv`;
 
-                const sortedData = currentData;
+            a.download = fileName;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
 
-                const exportData = sortedData.map((row, index) => {
-                    const contribution = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
-                    const totalContribution = Number(row.TOTAL_IDXCONTR) || contribution;
-                    const avgFailures = Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0);
-                    const totalFailures = Math.max(0, Number(row.TOTAL_EXTRAFAILURES) || (avgFailures * (row.RECORD_COUNT || 1)));
-                    const validAvg = isFinite(avgFailures) ? Math.round(avgFailures) : 0;
-                    const validTotal = isFinite(totalFailures) ? Math.round(totalFailures) : 0;
+        function showLoading() {
+            document.querySelector('.loading').style.display = 'block';
+            document.querySelector('.table-container').style.display = 'none';
+        }
 
-                    return {
-                        Rank: index + 1,
-                        USID: row.USID || '',
-                        MetricName: row.METRIC_DISPLAY || row.METRICNAME || '',
-                        Contribution: contribution.toFixed(4),
-                        TotalContribution: totalContribution.toFixed(4),
-                        TotalFailures: validTotal,
-                        RecordCount: row.RECORD_COUNT || 1,
-                        Vendor: row.VENDOR || '',
-                        Cluster: row.CQECLUSTER || '',
-                        Submarket: row.SUBMKT || '',
-                        EarliestPeriod: row.EARLIEST_PERIOD || '',
-                        LatestPeriod: row.LATEST_PERIOD || '',
-                        AggregationType: isShowingAllMetrics ? 'All Metrics' : 'Single Metric',
-                        SortedBy: sortingCriteria === 'contribution' ? 'Contribution (Worst First)' : 'Total Failures (Highest First)'
-                    };
-                });
-
-                const headers = Object.keys(exportData[0]);
-                const csvContent = [
-                    headers.join(','),
-                    ...exportData.map(row => headers.map(h => {
-                        const value = String(row[h] || '');
-                        return value.includes(',') || value.includes('"') || value.includes('\n')
-                            ? `"${value.replace(/"/g, '""')}"`
-                            : value;
-                    }).join(','))
-                ].join('\n');
-
-                const blob = new Blob([csvContent], { type: 'text/csv' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-
-                const sortType = sortingCriteria === 'contribution' ? 'contrib_worst_first' : 'failures_highest_first';
-                const fileName = isShowingAllMetrics ?
-                    `cqi_offenders_all_metrics_${sortType}_${new Date().toISOString().split('T')[0]}.csv` :
-                    `cqi_offenders_filtered_${sortType}_${new Date().toISOString().split('T')[0]}.csv`;
-
-                a.download = fileName;
-                a.click();
-                window.URL.revokeObjectURL(url);
-            }
-
-            function showLoading() {
-                document.querySelector('.loading').style.display = 'block';
-                document.querySelector('.table-container').style.display = 'none';
-            }
-
-            function hideLoading() {
-                document.querySelector('.loading').style.display = 'none';
-                document.querySelector('.table-container').style.display = 'block';
-            }
-        </script>
+        function hideLoading() {
+            document.querySelector('.loading').style.display = 'none';
+            document.querySelector('.table-container').style.display = 'block';
+        }
+    </script>
 </body>
 
 </html>
