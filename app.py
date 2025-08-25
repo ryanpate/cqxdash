@@ -1,6 +1,6 @@
 """
-CQI Dashboard Flask API - Updated with Dynamic Submarket-Cluster Filtering
-Supports cascading filters where CQE Clusters are filtered by selected Submarket
+CQI Dashboard Flask API - Using CSV for Submarket-Cluster Mapping
+Reads submarket-cluster relationships from submkt_cqecluster_mapping.csv
 """
 
 from dotenv import load_dotenv  # For loading .env file
@@ -9,6 +9,7 @@ import logging
 from functools import lru_cache
 import os
 from datetime import datetime, timedelta
+import csv
 import numpy as np
 import pandas as pd
 import snowflake.connector as sc
@@ -41,6 +42,9 @@ SNOWFLAKE_CONFIG = {
     'database': os.getenv('SNOWFLAKE_DATABASE', 'PRD_MOBILITY'),
     'schema': os.getenv('SNOWFLAKE_SCHEMA', 'PRD_MOBILITYSCORECARD_VIEWS')
 }
+
+# Path to the mapping CSV file
+MAPPING_CSV_PATH = 'submkt_cqecluster_mapping.csv'
 
 # Handle authentication method
 if os.getenv('SNOWFLAKE_PRIVATE_KEY_PATH'):
@@ -81,6 +85,55 @@ def validate_config():
         return False
 
     return True
+
+
+def load_submarket_cluster_mapping():
+    """Load the submarket-cluster mapping from CSV file"""
+    mapping = {}
+
+    # Check if CSV file exists
+    if not os.path.exists(MAPPING_CSV_PATH):
+        logger.warning(f"Mapping CSV file not found: {MAPPING_CSV_PATH}")
+        logger.warning("Creating sample mapping file...")
+
+        # Create a sample CSV file if it doesn't exist
+        sample_data = [
+            ['SUBMKT', 'CQECLUSTER'],
+            ['NYC', 'CQE_NYC_MANHATTAN'],
+            ['NYC', 'CQE_NYC_BROOKLYN'],
+            ['LA', 'CQE_LA_DOWNTOWN'],
+            ['LA', 'CQE_LA_HOLLYWOOD'],
+            ['Chicago', 'CQE_CHI_NORTH'],
+            ['Chicago', 'CQE_CHI_SOUTH'],
+        ]
+
+        with open(MAPPING_CSV_PATH, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerows(sample_data)
+
+        logger.info(f"Sample mapping file created: {MAPPING_CSV_PATH}")
+
+    # Read the CSV file
+    try:
+        with open(MAPPING_CSV_PATH, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                submarket = row.get('SUBMKT', '').strip()
+                cluster = row.get('CQECLUSTER', '').strip()
+
+                if submarket and cluster:
+                    if submarket not in mapping:
+                        mapping[submarket] = []
+                    mapping[submarket].append(cluster)
+
+        logger.info(
+            f"Loaded mapping for {len(mapping)} submarkets from {MAPPING_CSV_PATH}")
+
+    except Exception as e:
+        logger.error(f"Error reading mapping CSV: {str(e)}")
+        return {}
+
+    return mapping
 
 
 def clean_numeric_value(value):
@@ -159,9 +212,13 @@ def get_snowflake_connection():
 def health_check():
     """Health check endpoint"""
     config_valid = validate_config()
+    csv_exists = os.path.exists(MAPPING_CSV_PATH)
+
     return jsonify({
         'status': 'healthy' if config_valid else 'unhealthy',
         'config_valid': config_valid,
+        'mapping_csv_exists': csv_exists,
+        'mapping_csv_path': MAPPING_CSV_PATH,
         'timestamp': datetime.now().isoformat()
     })
 
@@ -248,6 +305,14 @@ def test_connection():
         cur.close()
         conn.close()
 
+        # Load and test the CSV mapping
+        mapping = load_submarket_cluster_mapping()
+        mapping_info = {
+            'total_submarkets': len(mapping),
+            'total_mappings': sum(len(clusters) for clusters in mapping.values()),
+            'sample_mappings': dict(list(mapping.items())[:3]) if mapping else {}
+        }
+
         response_data = {
             'connection': 'success',
             'user': context[0],
@@ -256,7 +321,8 @@ def test_connection():
             'table_exists': table_exists,
             'total_rows': row_count,
             'recent_rows_2days': recent_count,
-            'sample_data': sample_data
+            'sample_data': sample_data,
+            'csv_mapping': mapping_info
         }
 
         if date_range:
@@ -278,7 +344,7 @@ def test_connection():
 
 @app.route('/api/filters', methods=['GET'])
 def get_filter_options():
-    """Get available filter options from the database with submarket-cluster relationships"""
+    """Get available filter options from the database with CSV-based submarket-cluster mapping"""
     try:
         conn = get_snowflake_connection()
         cur = conn.cursor()
@@ -300,52 +366,79 @@ def get_filter_options():
             'VOLTE_WIFI_CDR_25': 'WIFI-RET'
         }
 
-        # Get unique submarkets
+        # Get unique submarkets from database
         cur.execute("""
             SELECT DISTINCT SUBMKT 
             FROM CQI2025_CQX_CONTRIBUTION 
             WHERE SUBMKT IS NOT NULL 
             ORDER BY SUBMKT
         """)
-        filters['submarkets'] = [row[0] for row in cur.fetchall()]
+        db_submarkets = [row[0] for row in cur.fetchall()]
 
-        # Get all unique CQE clusters
+        # Get all unique CQE clusters from database
         cur.execute("""
             SELECT DISTINCT CQECLUSTER 
             FROM CQI2025_CQX_CONTRIBUTION 
             WHERE CQECLUSTER IS NOT NULL 
             ORDER BY CQECLUSTER
         """)
-        filters['cqeClusters'] = [row[0] for row in cur.fetchall()]
+        db_clusters = [row[0] for row in cur.fetchall()]
 
-        # Get submarket-cluster relationships
-        cur.execute("""
-            SELECT DISTINCT SUBMKT, CQECLUSTER 
-            FROM CQI2025_CQX_CONTRIBUTION 
-            WHERE SUBMKT IS NOT NULL AND CQECLUSTER IS NOT NULL 
-            ORDER BY SUBMKT, CQECLUSTER
-        """)
-        
-        # Build a mapping of submarket to its clusters
-        submarket_clusters = {}
-        for row in cur.fetchall():
-            submarket = row[0]
-            cluster = row[1]
-            if submarket not in submarket_clusters:
-                submarket_clusters[submarket] = []
-            submarket_clusters[submarket].append(cluster)
-        
-        filters['submarketClusters'] = submarket_clusters
+        cur.close()
+        conn.close()
+
+        # Load the CSV mapping
+        csv_mapping = load_submarket_cluster_mapping()
+
+        # If CSV mapping exists, use it; otherwise fall back to database relationships
+        if csv_mapping:
+            # Use submarkets from CSV that also exist in the database
+            csv_submarkets = set(csv_mapping.keys())
+            db_submarkets_set = set(db_submarkets)
+
+            # Intersection of CSV and database submarkets
+            filters['submarkets'] = sorted(
+                list(csv_submarkets & db_submarkets_set))
+
+            # Log any mismatches for debugging
+            csv_only = csv_submarkets - db_submarkets_set
+            db_only = db_submarkets_set - csv_submarkets
+
+            if csv_only:
+                logger.warning(
+                    f"Submarkets in CSV but not in database: {csv_only}")
+            if db_only:
+                logger.warning(
+                    f"Submarkets in database but not in CSV: {db_only}")
+
+            # Get all unique clusters from the CSV mapping
+            all_csv_clusters = set()
+            for clusters in csv_mapping.values():
+                all_csv_clusters.update(clusters)
+
+            # Use clusters that exist in both CSV and database
+            db_clusters_set = set(db_clusters)
+            filters['cqeClusters'] = sorted(
+                list(all_csv_clusters & db_clusters_set))
+
+            # Store the mapping for the frontend
+            filters['submarketClusters'] = csv_mapping
+
+            logger.info(
+                f"Using CSV mapping: {len(filters['submarkets'])} submarkets, {len(filters['cqeClusters'])} clusters")
+        else:
+            # Fall back to database values if no CSV mapping
+            filters['submarkets'] = db_submarkets
+            filters['cqeClusters'] = db_clusters
+            filters['submarketClusters'] = {}
+
+            logger.warning(
+                "No CSV mapping available, using all database values")
 
         # Return the display names for metrics
         filters['metricNames'] = list(metric_mapping.values())
         filters['metricMapping'] = metric_mapping
 
-        cur.close()
-        conn.close()
-
-        logger.info(f"Filter options loaded: {len(filters['submarkets'])} submarkets with cluster mappings")
-        
         return jsonify(filters)
 
     except Exception as e:
@@ -374,6 +467,7 @@ def get_cqi_data():
                             for c in cqe_clusters_str.split(',') if c.strip()]
 
         logger.info(f"Data request with sorting: {sorting_criteria}")
+        logger.info(f"Selected Submarket: {submarket}")
         logger.info(f"Selected CQE Clusters: {cqe_clusters}")
 
         # Define metric mapping
@@ -745,7 +839,22 @@ def internal_error(error):
 
 
 if __name__ == '__main__':
-    print("🚀 Starting CQI Dashboard API Server (with Dynamic Submarket-Cluster Filtering)...")
+    print("🚀 Starting CQI Dashboard API Server (with CSV-based Submarket-Cluster Mapping)...")
+    print(f"📄 Looking for mapping file: {MAPPING_CSV_PATH}")
+
+    # Check if mapping file exists
+    if os.path.exists(MAPPING_CSV_PATH):
+        print(f"✅ Mapping file found: {MAPPING_CSV_PATH}")
+        # Try to load and display summary
+        mapping = load_submarket_cluster_mapping()
+        if mapping:
+            print(f"📊 Loaded mappings for {len(mapping)} submarkets")
+            print(
+                f"   Total cluster mappings: {sum(len(clusters) for clusters in mapping.values())}")
+    else:
+        print(
+            f"⚠️  Mapping file not found. A sample file will be created at: {MAPPING_CSV_PATH}")
+        print("   Please update it with your actual submarket-cluster mappings")
 
     # Check configuration
     if validate_config():
@@ -765,7 +874,7 @@ if __name__ == '__main__':
         print("  SNOWFLAKE_PRIVATE_KEY_PASSPHRASE (if key is encrypted)")
 
     print("\n📡 API will be available at: http://localhost:5000")
-    print("✨ NEW FEATURE: Dynamic Submarket-Cluster filtering now active!")
+    print("✨ NEW FEATURE: CSV-based Submarket-Cluster filtering!")
     print("-" * 50)
 
     app.run(debug=False, host='0.0.0.0', port=5000)
