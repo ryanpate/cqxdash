@@ -442,7 +442,6 @@
                 <div class="filter-group">
                     <label for="cqeCluster">CQE Cluster
                         <span id="clusterCount" class="selected-count" style="display: none;">0</span>
-                        <span id="clusterFilterInfo" class="filter-info" style="display: none;">Filtered</span>
                     </label>
                     <div class="multi-select-container">
                         <div class="multi-select-input" id="cqeClusterInput">
@@ -654,7 +653,6 @@
                 if (!submarket || submarket === '') {
                     // No submarket selected, show all clusters
                     currentSubmarketClusters = allClusters;
-                    document.getElementById('clusterFilterInfo').style.display = 'none';
                     document.getElementById('cqeClusterInput').classList.remove('filtered');
 
                     // Repopulate with all clusters
@@ -668,16 +666,12 @@
                         currentSubmarketClusters = submarketClusters[submarket];
                         console.log(`📍 Found ${currentSubmarketClusters.length} clusters for ${submarket} in CSV mapping`);
 
-                        document.getElementById('clusterFilterInfo').style.display = 'inline-block';
-                        document.getElementById('clusterFilterInfo').textContent = `${currentSubmarketClusters.length} available`;
                         document.getElementById('cqeClusterInput').classList.add('filtered');
                     } else {
                         // No CSV mapping for this submarket - show ALL clusters
                         currentSubmarketClusters = allClusters;
                         console.log(`⚠️ No CSV mapping for ${submarket}, showing all ${allClusters.length} clusters`);
 
-                        document.getElementById('clusterFilterInfo').style.display = 'inline-block';
-                        document.getElementById('clusterFilterInfo').textContent = 'All (no mapping)';
                         document.getElementById('cqeClusterInput').classList.remove('filtered');
                     }
 
@@ -1256,7 +1250,6 @@
 
                 // Reset cascading filter
                 currentSubmarketClusters = allClusters;
-                document.getElementById('clusterFilterInfo').style.display = 'none';
                 document.getElementById('cqeClusterInput').classList.remove('filtered');
 
                 // Reset multi-select clusters
