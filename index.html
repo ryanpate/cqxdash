@@ -637,7 +637,7 @@
                 });
             }
 
-            // Handle submarket change event - Using CSV-based mapping
+            // Handle submarket change event - UPDATED FUNCTION
             function handleSubmarketChange(submarket) {
                 console.log('🏙️ Submarket changed to:', submarket || 'All');
 
@@ -659,22 +659,12 @@
 
                     // Repopulate with all clusters
                     populateMultiSelect('cqeCluster', allClusters);
-
-                    console.log('📍 Showing all clusters:', allClusters.length);
                 } else {
-                    // Get clusters for selected submarket from the CSV-based mapping
-                    if (submarketClusters && submarketClusters[submarket]) {
-                        currentSubmarketClusters = submarketClusters[submarket];
-                        console.log(`📍 Found ${currentSubmarketClusters.length} clusters for ${submarket} in CSV mapping`);
-                    } else {
-                        // No mapping found for this submarket
-                        currentSubmarketClusters = [];
-                        console.warn(`⚠️ No cluster mapping found for submarket: ${submarket}`);
-                    }
+                    // Get clusters for selected submarket from the already loaded data
+                    currentSubmarketClusters = submarketClusters[submarket] || [];
 
                     document.getElementById('clusterFilterInfo').style.display = 'inline-block';
-                    document.getElementById('clusterFilterInfo').textContent = currentSubmarketClusters.length > 0 ?
-                        `${currentSubmarketClusters.length} available` : 'No mapping';
+                    document.getElementById('clusterFilterInfo').textContent = `${currentSubmarketClusters.length} available`;
                     document.getElementById('cqeClusterInput').classList.add('filtered');
 
                     // Repopulate with filtered clusters
@@ -688,7 +678,7 @@
                 // Update the display
                 updateSelectedClusters();
 
-                console.log(`📊 Current available clusters:`, currentSubmarketClusters);
+                console.log(`📍 Available clusters: ${currentSubmarketClusters.length}`, currentSubmarketClusters);
             }
 
             // Update selected clusters array and display
