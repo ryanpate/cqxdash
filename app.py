@@ -1,7 +1,6 @@
 """
-CQI Dashboard Flask API - With District Support
+CQI Dashboard Flask API - Using CSV for Submarket-Cluster Mapping
 Reads submarket-cluster relationships from submkt_cqecluster_mapping.csv
-Reads district assignments from [Submarket].csv files
 """
 
 from dotenv import load_dotenv  # For loading .env file
@@ -135,37 +134,6 @@ def load_submarket_cluster_mapping():
         return {}
 
     return mapping
-
-
-def load_district_mapping(submarket):
-    """Load district mapping for a specific submarket from CSV file"""
-    if not submarket:
-        return {}
-    
-    district_mapping = {}
-    csv_filename = f"{submarket}.csv"
-    
-    if not os.path.exists(csv_filename):
-        logger.info(f"District file not found: {csv_filename}")
-        return {}
-    
-    try:
-        with open(csv_filename, 'r', encoding='utf-8') as f:
-            # CSV has no headers - column 1 is USID, column 2 is District
-            reader = csv.reader(f)
-            for row in reader:
-                if len(row) >= 2:
-                    usid = row[0].strip()
-                    district = row[1].strip()
-                    if usid and district:
-                        district_mapping[usid] = district
-        
-        logger.info(f"Loaded {len(district_mapping)} district mappings for {submarket}")
-        return district_mapping
-        
-    except Exception as e:
-        logger.error(f"Error reading district CSV for {submarket}: {str(e)}")
-        return {}
 
 
 def clean_numeric_value(value):
@@ -457,26 +425,9 @@ def get_filter_options():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/districts/<submarket>', methods=['GET'])
-def get_district_data(submarket):
-    """Get district mappings for a specific submarket"""
-    try:
-        district_mapping = load_district_mapping(submarket)
-        
-        return jsonify({
-            'submarket': submarket,
-            'districts': district_mapping,
-            'count': len(district_mapping)
-        })
-        
-    except Exception as e:
-        logger.error(f"Error fetching district data: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
 @app.route('/api/data', methods=['GET'])
 def get_cqi_data():
-    """Get CQI data - aggregated by USID+METRICNAME with multi-select CQE Clusters and District support"""
+    """Get CQI data - aggregated by USID+METRICNAME with multi-select CQE Clusters support"""
     try:
         # Get filter parameters
         submarket = request.args.get('submarket', '')
@@ -497,12 +448,6 @@ def get_cqi_data():
         logger.info(f"Data request with sorting: {sorting_criteria}")
         logger.info(f"Selected Submarket: {submarket}")
         logger.info(f"Selected CQE Clusters: {cqe_clusters}")
-
-        # Load district mapping if submarket is selected
-        district_mapping = {}
-        if submarket:
-            district_mapping = load_district_mapping(submarket)
-            logger.info(f"Loaded {len(district_mapping)} district mappings for {submarket}")
 
         # Define metric mapping
         metric_mapping = {
@@ -663,19 +608,10 @@ def get_cqi_data():
 
             record['EXTRAFAILURES'] = record.get('AVG_EXTRAFAILURES', 0)
             record['IDXCONTR'] = record.get('AVG_IDXCONTR', 0)
-            
-            # Add district if available
-            if district_mapping and record.get('USID') in district_mapping:
-                record['DISTRICT'] = district_mapping[record.get('USID')]
-            
+
             result.append(record)
 
-        # Include district mapping status in response
-        return jsonify({
-            'data': result,
-            'hasDistricts': len(district_mapping) > 0,
-            'districtCount': len(district_mapping)
-        })
+        return jsonify(result)
 
     except Exception as e:
         logger.error(f"Error fetching CQI data: {str(e)}")
@@ -882,7 +818,7 @@ def internal_error(error):
 
 
 if __name__ == '__main__':
-    print("🚀 Starting CQI Dashboard API Server (with District Support)...")
+    print("🚀 Starting CQI Dashboard API Server (with CSV-based Submarket-Cluster Mapping)...")
     print(f"📄 Looking for mapping file: {MAPPING_CSV_PATH}")
 
     # Check if mapping file exists
@@ -899,26 +835,13 @@ if __name__ == '__main__':
             f"⚠️  Mapping file not found. A sample file will be created at: {MAPPING_CSV_PATH}")
         print("   Please update it with your actual submarket-cluster mappings")
 
-    # Check for district CSV files
-    print("\n📍 Checking for district CSV files...")
-    district_files = [f for f in os.listdir('.') if f.endswith('.csv') and f != MAPPING_CSV_PATH]
-    if district_files:
-        print(f"✅ Found {len(district_files)} district CSV files:")
-        for f in district_files[:5]:
-            print(f"   - {f}")
-        if len(district_files) > 5:
-            print(f"   ... and {len(district_files) - 5} more")
-    else:
-        print("⚠️  No district CSV files found. District column will not appear.")
-        print("   Add CSV files named after submarkets (e.g., 'Central Illinois.csv')")
-
     # Check configuration
     if validate_config():
-        print("\n✅ Configuration loaded from environment variables")
+        print("✅ Configuration loaded from environment variables")
         print(
             f"📊 Connecting to Snowflake as user: {SNOWFLAKE_CONFIG.get('user')}")
     else:
-        print("\n❌ Configuration incomplete. Please check environment variables.")
+        print("❌ Configuration incomplete. Please check environment variables.")
         print("\nRequired environment variables:")
         print("  SNOWFLAKE_USER")
         print("  SNOWFLAKE_PRIVATE_KEY_PATH or SNOWFLAKE_PASSWORD")
@@ -930,7 +853,7 @@ if __name__ == '__main__':
         print("  SNOWFLAKE_PRIVATE_KEY_PASSPHRASE (if key is encrypted)")
 
     print("\n📡 API will be available at: http://localhost:5000")
-    print("✨ NEW FEATURE: District support via CSV files!")
+    print("✨ NEW FEATURE: CSV-based Submarket-Cluster filtering!")
     print("-" * 50)
 
     app.run(debug=False, host='0.0.0.0', port=5000)
