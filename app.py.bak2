@@ -1,6 +1,6 @@
 """
-CQI Dashboard Flask API - Updated with Dynamic Submarket-Cluster Filtering
-Supports cascading filters where CQE Clusters are filtered by selected Submarket
+CQI Dashboard Flask API - Updated with Multi-Select CQE Clusters
+Supports multiple CQE Cluster selections in filters
 """
 
 from dotenv import load_dotenv  # For loading .env file
@@ -277,8 +277,9 @@ def test_connection():
 
 
 @app.route('/api/filters', methods=['GET'])
+@lru_cache(maxsize=1)
 def get_filter_options():
-    """Get available filter options from the database with submarket-cluster relationships"""
+    """Get available filter options from the database"""
     try:
         conn = get_snowflake_connection()
         cur = conn.cursor()
@@ -309,7 +310,7 @@ def get_filter_options():
         """)
         filters['submarkets'] = [row[0] for row in cur.fetchall()]
 
-        # Get all unique CQE clusters
+        # Get unique CQE clusters
         cur.execute("""
             SELECT DISTINCT CQECLUSTER 
             FROM CQI2025_CQX_CONTRIBUTION 
@@ -318,25 +319,6 @@ def get_filter_options():
         """)
         filters['cqeClusters'] = [row[0] for row in cur.fetchall()]
 
-        # Get submarket-cluster relationships
-        cur.execute("""
-            SELECT DISTINCT SUBMKT, CQECLUSTER 
-            FROM CQI2025_CQX_CONTRIBUTION 
-            WHERE SUBMKT IS NOT NULL AND CQECLUSTER IS NOT NULL 
-            ORDER BY SUBMKT, CQECLUSTER
-        """)
-        
-        # Build a mapping of submarket to its clusters
-        submarket_clusters = {}
-        for row in cur.fetchall():
-            submarket = row[0]
-            cluster = row[1]
-            if submarket not in submarket_clusters:
-                submarket_clusters[submarket] = []
-            submarket_clusters[submarket].append(cluster)
-        
-        filters['submarketClusters'] = submarket_clusters
-
         # Return the display names for metrics
         filters['metricNames'] = list(metric_mapping.values())
         filters['metricMapping'] = metric_mapping
@@ -344,8 +326,6 @@ def get_filter_options():
         cur.close()
         conn.close()
 
-        logger.info(f"Filter options loaded: {len(filters['submarkets'])} submarkets with cluster mappings")
-        
         return jsonify(filters)
 
     except Exception as e:
@@ -745,7 +725,7 @@ def internal_error(error):
 
 
 if __name__ == '__main__':
-    print("🚀 Starting CQI Dashboard API Server (with Dynamic Submarket-Cluster Filtering)...")
+    print("🚀 Starting CQI Dashboard API Server (with Multi-Select Support)...")
 
     # Check configuration
     if validate_config():
@@ -765,7 +745,7 @@ if __name__ == '__main__':
         print("  SNOWFLAKE_PRIVATE_KEY_PASSPHRASE (if key is encrypted)")
 
     print("\n📡 API will be available at: http://localhost:5000")
-    print("✨ NEW FEATURE: Dynamic Submarket-Cluster filtering now active!")
+    print("✨ NEW FEATURE: Multi-select CQE Clusters now supported!")
     print("-" * 50)
 
     app.run(debug=False, host='0.0.0.0', port=5000)
