@@ -408,7 +408,7 @@
         <div class="chart-section">
             <div class="chart-header">
                 <h2>Extra Failures Over Time</h2>
-                <span class="tooltip-hint">💡 Click legend items below to filter metrics</span>
+                <span class="tooltip-hint">💡 Click any metric to isolate it, click again to show all</span>
             </div>
             
             <!-- Interactive Legend Filter Section -->
@@ -421,8 +421,8 @@
             
             <div class="quick-actions">
                 <button class="btn btn-sm btn-success" onclick="showAllMetrics()">Show All</button>
-                <button class="btn btn-sm btn-warning" onclick="hideAllMetrics()">Hide All</button>
-                <button class="btn btn-sm btn-secondary" onclick="invertSelection()">Invert Selection</button>
+                <button class="btn btn-sm btn-secondary" onclick="cycleMetrics()">Cycle Through</button>
+                <button class="btn btn-sm btn-warning" onclick="compareTopTwo()">Compare Top 2</button>
             </div>
 
             <div id="loadingDiv" class="loading">
@@ -516,19 +516,36 @@
             }
         }
 
-        // Toggle metric visibility
+        // Toggle metric visibility - isolate single metric or show all
         function toggleMetric(metric) {
-            const badge = document.getElementById(`badge-${metric.replace(/\s+/g, '-')}`);
-            
-            if (activeMetrics.has(metric)) {
-                activeMetrics.delete(metric);
-                badge.classList.remove('active');
-                badge.classList.add('inactive');
+            // If only this metric is active, show all metrics
+            if (activeMetrics.size === 1 && activeMetrics.has(metric)) {
+                showAllMetrics();
             } else {
-                activeMetrics.add(metric);
-                badge.classList.remove('inactive');
-                badge.classList.add('active');
+                // Otherwise, show only this metric
+                isolateMetric(metric);
             }
+        }
+
+        // Isolate a single metric
+        function isolateMetric(metric) {
+            // Clear all active metrics
+            activeMetrics.clear();
+            
+            // Add only the selected metric
+            activeMetrics.add(metric);
+            
+            // Update all badges
+            document.querySelectorAll('.metric-badge').forEach(badge => {
+                const badgeMetric = badge.textContent.trim();
+                if (badgeMetric === metric) {
+                    badge.classList.remove('inactive');
+                    badge.classList.add('active');
+                } else {
+                    badge.classList.remove('active');
+                    badge.classList.add('inactive');
+                }
+            });
             
             updateChartWithActiveMetrics();
             updateStatistics(currentData);
@@ -548,31 +565,49 @@
             updateStatistics(currentData);
         }
 
-        // Hide all metrics
-        function hideAllMetrics() {
-            activeMetrics.clear();
-            document.querySelectorAll('.metric-badge').forEach(badge => {
-                badge.classList.remove('active');
-                badge.classList.add('inactive');
-            });
-            updateChartWithActiveMetrics();
-            updateStatistics(currentData);
+        let currentCycleIndex = 0;
+
+        // Cycle through metrics one by one
+        function cycleMetrics() {
+            const metrics = Object.keys(allChartData);
+            if (metrics.length === 0) return;
+            
+            currentCycleIndex = (currentCycleIndex + 1) % metrics.length;
+            isolateMetric(metrics[currentCycleIndex]);
         }
 
-        // Invert selection
-        function invertSelection() {
+        // Compare top two metrics by average failures
+        function compareTopTwo() {
+            const metricAverages = {};
+            
+            // Calculate average for each metric
             Object.keys(allChartData).forEach(metric => {
-                if (activeMetrics.has(metric)) {
-                    activeMetrics.delete(metric);
+                const values = Object.values(allChartData[metric]);
+                const avg = values.reduce((a, b) => a + b, 0) / values.length;
+                metricAverages[metric] = avg;
+            });
+            
+            // Sort by average and get top 2
+            const sortedMetrics = Object.entries(metricAverages)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 2)
+                .map(entry => entry[0]);
+            
+            // Clear all and show only top 2
+            activeMetrics.clear();
+            
+            document.querySelectorAll('.metric-badge').forEach(badge => {
+                const badgeMetric = badge.textContent.trim();
+                if (sortedMetrics.includes(badgeMetric)) {
+                    activeMetrics.add(badgeMetric);
+                    badge.classList.remove('inactive');
+                    badge.classList.add('active');
                 } else {
-                    activeMetrics.add(metric);
-                }
-                const badge = document.getElementById(`badge-${metric.replace(/\s+/g, '-')}`);
-                if (badge) {
-                    badge.classList.toggle('active');
-                    badge.classList.toggle('inactive');
+                    badge.classList.remove('active');
+                    badge.classList.add('inactive');
                 }
             });
+            
             updateChartWithActiveMetrics();
             updateStatistics(currentData);
         }
@@ -1053,15 +1088,25 @@
                     e.preventDefault();
                     showAllMetrics();
                 }
-            } else if (e.key === 'd' || e.key === 'D') {
+            } else if (e.key === 'c' || e.key === 'C') {
                 if (e.ctrlKey || e.metaKey) {
                     e.preventDefault();
-                    hideAllMetrics();
+                    cycleMetrics();
                 }
-            } else if (e.key === 'i' || e.key === 'I') {
-                if (e.ctrlKey || e.metaKey) {
-                    e.preventDefault();
-                    invertSelection();
+            } else if ((e.key === 'ArrowRight' || e.key === 'ArrowDown') && !e.ctrlKey && !e.metaKey) {
+                cycleMetrics();
+            } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowUp') && !e.ctrlKey && !e.metaKey) {
+                // Cycle backwards
+                const metrics = Object.keys(allChartData);
+                if (metrics.length === 0) return;
+                currentCycleIndex = (currentCycleIndex - 1 + metrics.length) % metrics.length;
+                isolateMetric(metrics[currentCycleIndex]);
+            } else if (e.key >= '1' && e.key <= '9') {
+                // Quick access to metrics by number
+                const metrics = Object.keys(allChartData);
+                const index = parseInt(e.key) - 1;
+                if (index < metrics.length) {
+                    isolateMetric(metrics[index]);
                 }
             }
         });
