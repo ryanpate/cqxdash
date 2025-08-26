@@ -410,7 +410,7 @@
                 <h2>Extra Failures Over Time</h2>
                 <span class="tooltip-hint">💡 Click any metric to isolate it, click again to show all</span>
             </div>
-            
+
             <!-- Interactive Legend Filter Section -->
             <div class="legend-filters" id="legendFilters">
                 <span class="legend-filters-title">Metrics:</span>
@@ -418,7 +418,7 @@
                     <!-- Metric badges will be dynamically added here -->
                 </div>
             </div>
-            
+
             <div class="quick-actions">
                 <button class="btn btn-sm btn-success" onclick="showAllMetrics()">Show All</button>
                 <button class="btn btn-sm btn-secondary" onclick="cycleMetrics()">Cycle Through</button>
@@ -531,10 +531,10 @@
         function isolateMetric(metric) {
             // Clear all active metrics
             activeMetrics.clear();
-            
+
             // Add only the selected metric
             activeMetrics.add(metric);
-            
+
             // Update all badges
             document.querySelectorAll('.metric-badge').forEach(badge => {
                 const badgeMetric = badge.textContent.trim();
@@ -546,7 +546,7 @@
                     badge.classList.add('inactive');
                 }
             });
-            
+
             updateChartWithActiveMetrics();
             updateStatistics(currentData);
         }
@@ -571,7 +571,7 @@
         function cycleMetrics() {
             const metrics = Object.keys(allChartData);
             if (metrics.length === 0) return;
-            
+
             currentCycleIndex = (currentCycleIndex + 1) % metrics.length;
             isolateMetric(metrics[currentCycleIndex]);
         }
@@ -579,23 +579,23 @@
         // Compare top two metrics by average failures
         function compareTopTwo() {
             const metricAverages = {};
-            
+
             // Calculate average for each metric
             Object.keys(allChartData).forEach(metric => {
                 const values = Object.values(allChartData[metric]);
                 const avg = values.reduce((a, b) => a + b, 0) / values.length;
                 metricAverages[metric] = avg;
             });
-            
+
             // Sort by average and get top 2
             const sortedMetrics = Object.entries(metricAverages)
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 2)
                 .map(entry => entry[0]);
-            
+
             // Clear all and show only top 2
             activeMetrics.clear();
-            
+
             document.querySelectorAll('.metric-badge').forEach(badge => {
                 const badgeMetric = badge.textContent.trim();
                 if (sortedMetrics.includes(badgeMetric)) {
@@ -607,7 +607,7 @@
                     badge.classList.add('inactive');
                 }
             });
-            
+
             updateChartWithActiveMetrics();
             updateStatistics(currentData);
         }
@@ -616,20 +616,20 @@
         function createMetricBadges(metrics) {
             const container = document.getElementById('metricBadges');
             container.innerHTML = '';
-            
+
             metrics.forEach(metric => {
                 const badge = document.createElement('div');
                 badge.className = 'metric-badge active';
                 badge.id = `badge-${metric.replace(/\s+/g, '-')}`;
                 badge.onclick = () => toggleMetric(metric);
-                
+
                 const indicator = document.createElement('div');
                 indicator.className = 'metric-indicator';
                 indicator.style.backgroundColor = metricColors[metric] || `rgb(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255})`;
-                
+
                 badge.appendChild(indicator);
                 badge.appendChild(document.createTextNode(metric));
-                
+
                 container.appendChild(badge);
                 activeMetrics.add(metric);
             });
@@ -638,39 +638,25 @@
         // Update chart with only active metrics
         function updateChartWithActiveMetrics() {
             if (!chart) return;
-            
-            const datasets = [];
-            const sortedDates = chart.data.labels;
-            
-            Object.keys(allChartData).forEach(metric => {
-                if (activeMetrics.has(metric)) {
-                    const data = sortedDates.map(date => ({
-                        x: date,
-                        y: allChartData[metric][date] || 0
-                    }));
-                    
-                    datasets.push({
-                        label: metric,
-                        data: data,
-                        borderColor: metricColors[metric] || `rgb(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255})`,
-                        backgroundColor: 'transparent',
-                        borderWidth: 2,
-                        tension: 0.4,
-                        pointRadius: 4,
-                        pointHoverRadius: 8,
-                        pointBackgroundColor: metricColors[metric] || `rgb(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255})`,
-                        pointBorderColor: '#fff',
-                        pointBorderWidth: 2,
-                        pointHoverBackgroundColor: metricColors[metric] || `rgb(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255})`,
-                        pointHoverBorderColor: '#fff',
-                        pointHoverBorderWidth: 3
-                    });
+
+            // Update dataset visibility instead of removing/adding datasets
+            chart.data.datasets.forEach((dataset, index) => {
+                const metric = dataset.label;
+                const isActive = activeMetrics.has(metric);
+
+                // Set dataset visibility
+                dataset.hidden = !isActive;
+
+                // Update legend item style through meta
+                const meta = chart.getDatasetMeta(index);
+                if (meta) {
+                    meta.hidden = !isActive;
                 }
             });
-            
-            chart.data.datasets = datasets;
+
+            // Update the chart
             chart.update();
-            
+
             // Update active metrics count
             document.getElementById('activeMetrics').textContent = activeMetrics.size;
             document.getElementById('activeMetrics').title = `Showing ${activeMetrics.size} metrics`;
@@ -786,10 +772,10 @@
             const metricsToShow = metricFilter ? [metricFilter] : Array.from(allMetrics);
             createMetricBadges(metricsToShow);
 
-            // Prepare datasets for chart
+            // Prepare datasets for chart - include ALL metrics but mark as hidden based on active state
             const datasets = [];
 
-            metricsToShow.forEach(metric => {
+            Object.keys(allChartData).forEach(metric => {
                 const data = sortedDates.map(date => ({
                     x: date,
                     y: allChartData[metric][date] || 0
@@ -798,6 +784,7 @@
                 datasets.push({
                     label: metric,
                     data: data,
+                    hidden: !metricsToShow.includes(metric), // Initially all visible based on filter
                     borderColor: metricColors[metric] || `rgb(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255})`,
                     backgroundColor: 'transparent',
                     borderWidth: 2,
@@ -845,12 +832,39 @@
                                 padding: 15,
                                 font: {
                                     size: 12
+                                },
+                                generateLabels: function (chart) {
+                                    const datasets = chart.data.datasets;
+                                    return datasets.map((dataset, i) => {
+                                        const meta = chart.getDatasetMeta(i);
+                                        const isActive = activeMetrics.has(dataset.label);
+
+                                        return {
+                                            text: dataset.label,
+                                            fillStyle: dataset.borderColor,
+                                            strokeStyle: dataset.borderColor,
+                                            lineWidth: dataset.borderWidth,
+                                            hidden: !isActive,
+                                            fontColor: isActive ? '#2d3748' : '#cbd5e0',
+                                            textDecoration: isActive ? '' : 'line-through',
+                                            index: i,
+                                            datasetIndex: i,
+                                            // Custom properties for Chart.js to use
+                                            pointStyle: 'circle'
+                                        };
+                                    });
                                 }
                             },
                             onClick: (e, legendItem, legend) => {
+                                e.stopPropagation();
                                 const index = legendItem.datasetIndex;
                                 const metric = legend.chart.data.datasets[index].label;
+
+                                // Use the same toggle logic as metric badges
                                 toggleMetric(metric);
+
+                                // Prevent default Chart.js legend click behavior
+                                return false;
                             }
                         },
                         tooltip: {
@@ -965,7 +979,7 @@
 
         function updateStatistics(data) {
             const metricFilter = document.getElementById('metricFilter').value;
-            
+
             // Filter data based on active metrics and metric filter
             const filteredData = data.filter(d => {
                 const metric = d.METRIC_DISPLAY || d.METRICNAME;
