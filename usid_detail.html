@@ -138,6 +138,28 @@
             box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
         }
 
+        .btn-success {
+            background: #48bb78;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #38a169;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(72, 187, 120, 0.3);
+        }
+
+        .btn-warning {
+            background: #ed8936;
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: #dd6b20;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(237, 137, 54, 0.3);
+        }
+
         .chart-section {
             background: white;
             border-radius: 15px;
@@ -168,6 +190,70 @@
 
         .chart-container canvas {
             cursor: crosshair;
+        }
+
+        /* Legend filter badges */
+        .legend-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 20px 0;
+            padding: 15px;
+            background: #f7fafc;
+            border-radius: 10px;
+            min-height: 50px;
+            align-items: center;
+        }
+
+        .legend-filters-title {
+            color: #4a5568;
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-right: 15px;
+        }
+
+        .metric-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            user-select: none;
+            border: 2px solid transparent;
+        }
+
+        .metric-badge.active {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .metric-badge.inactive {
+            opacity: 0.5;
+            transform: scale(0.95);
+            text-decoration: line-through;
+        }
+
+        .metric-badge:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .metric-badge.inactive:hover {
+            opacity: 0.7;
+        }
+
+        .metric-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
         .stats-grid {
@@ -269,6 +355,17 @@
             background: #e6f7ff;
             border-color: #91d5ff;
         }
+
+        .quick-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .btn-sm {
+            padding: 8px 16px;
+            font-size: 0.85rem;
+        }
     </style>
 </head>
 
@@ -311,8 +408,23 @@
         <div class="chart-section">
             <div class="chart-header">
                 <h2>Extra Failures Over Time</h2>
-                <span class="tooltip-hint">💡 Hover over any data point for details</span>
+                <span class="tooltip-hint">💡 Click legend items below to filter metrics</span>
             </div>
+            
+            <!-- Interactive Legend Filter Section -->
+            <div class="legend-filters" id="legendFilters">
+                <span class="legend-filters-title">Metrics:</span>
+                <div id="metricBadges" style="display: flex; flex-wrap: wrap; gap: 10px;">
+                    <!-- Metric badges will be dynamically added here -->
+                </div>
+            </div>
+            
+            <div class="quick-actions">
+                <button class="btn btn-sm btn-success" onclick="showAllMetrics()">Show All</button>
+                <button class="btn btn-sm btn-warning" onclick="hideAllMetrics()">Hide All</button>
+                <button class="btn btn-sm btn-secondary" onclick="invertSelection()">Invert Selection</button>
+            </div>
+
             <div id="loadingDiv" class="loading">
                 <div class="loading-spinner"></div>
                 <p style="margin-top: 10px;">Loading metrics data...</p>
@@ -324,19 +436,19 @@
                 <div class="stats-grid">
                     <div class="stat-card">
                         <h3>Average Failures</h3>
-                        <div class="value" id="avgFailures" title="Average across all data points">0</div>
+                        <div class="value" id="avgFailures" title="Average across all visible data points">0</div>
                     </div>
                     <div class="stat-card">
                         <h3>Peak Failures</h3>
-                        <div class="value" id="peakFailures" title="Maximum value in dataset">0</div>
+                        <div class="value" id="peakFailures" title="Maximum value in visible dataset">0</div>
                     </div>
                     <div class="stat-card">
                         <h3>Total Data Points</h3>
-                        <div class="value" id="dataPoints" title="Number of measurements">0</div>
+                        <div class="value" id="dataPoints" title="Number of visible measurements">0</div>
                     </div>
                     <div class="stat-card">
                         <h3>Active Metrics</h3>
-                        <div class="value" id="activeMetrics" title="Number of different metrics shown">0</div>
+                        <div class="value" id="activeMetrics" title="Number of metrics shown">0</div>
                     </div>
                 </div>
             </div>
@@ -351,6 +463,8 @@
         let chart = null;
         let currentData = [];
         let currentUSID = null;
+        let activeMetrics = new Set();
+        let allChartData = {};
 
         // Metric display name mapping
         const metricMapping = {
@@ -400,6 +514,131 @@
             } else {
                 return num.toString();
             }
+        }
+
+        // Toggle metric visibility
+        function toggleMetric(metric) {
+            const badge = document.getElementById(`badge-${metric.replace(/\s+/g, '-')}`);
+            
+            if (activeMetrics.has(metric)) {
+                activeMetrics.delete(metric);
+                badge.classList.remove('active');
+                badge.classList.add('inactive');
+            } else {
+                activeMetrics.add(metric);
+                badge.classList.remove('inactive');
+                badge.classList.add('active');
+            }
+            
+            updateChartWithActiveMetrics();
+            updateStatistics(currentData);
+        }
+
+        // Show all metrics
+        function showAllMetrics() {
+            Object.keys(allChartData).forEach(metric => {
+                activeMetrics.add(metric);
+                const badge = document.getElementById(`badge-${metric.replace(/\s+/g, '-')}`);
+                if (badge) {
+                    badge.classList.remove('inactive');
+                    badge.classList.add('active');
+                }
+            });
+            updateChartWithActiveMetrics();
+            updateStatistics(currentData);
+        }
+
+        // Hide all metrics
+        function hideAllMetrics() {
+            activeMetrics.clear();
+            document.querySelectorAll('.metric-badge').forEach(badge => {
+                badge.classList.remove('active');
+                badge.classList.add('inactive');
+            });
+            updateChartWithActiveMetrics();
+            updateStatistics(currentData);
+        }
+
+        // Invert selection
+        function invertSelection() {
+            Object.keys(allChartData).forEach(metric => {
+                if (activeMetrics.has(metric)) {
+                    activeMetrics.delete(metric);
+                } else {
+                    activeMetrics.add(metric);
+                }
+                const badge = document.getElementById(`badge-${metric.replace(/\s+/g, '-')}`);
+                if (badge) {
+                    badge.classList.toggle('active');
+                    badge.classList.toggle('inactive');
+                }
+            });
+            updateChartWithActiveMetrics();
+            updateStatistics(currentData);
+        }
+
+        // Create metric badges for legend filtering
+        function createMetricBadges(metrics) {
+            const container = document.getElementById('metricBadges');
+            container.innerHTML = '';
+            
+            metrics.forEach(metric => {
+                const badge = document.createElement('div');
+                badge.className = 'metric-badge active';
+                badge.id = `badge-${metric.replace(/\s+/g, '-')}`;
+                badge.onclick = () => toggleMetric(metric);
+                
+                const indicator = document.createElement('div');
+                indicator.className = 'metric-indicator';
+                indicator.style.backgroundColor = metricColors[metric] || `rgb(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255})`;
+                
+                badge.appendChild(indicator);
+                badge.appendChild(document.createTextNode(metric));
+                
+                container.appendChild(badge);
+                activeMetrics.add(metric);
+            });
+        }
+
+        // Update chart with only active metrics
+        function updateChartWithActiveMetrics() {
+            if (!chart) return;
+            
+            const datasets = [];
+            const sortedDates = chart.data.labels;
+            
+            Object.keys(allChartData).forEach(metric => {
+                if (activeMetrics.has(metric)) {
+                    const data = sortedDates.map(date => ({
+                        x: date,
+                        y: allChartData[metric][date] || 0
+                    }));
+                    
+                    datasets.push({
+                        label: metric,
+                        data: data,
+                        borderColor: metricColors[metric] || `rgb(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255})`,
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        tension: 0.4,
+                        pointRadius: 4,
+                        pointHoverRadius: 8,
+                        pointBackgroundColor: metricColors[metric] || `rgb(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255})`,
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        pointHoverBackgroundColor: metricColors[metric] || `rgb(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255})`,
+                        pointHoverBorderColor: '#fff',
+                        pointHoverBorderWidth: 3
+                    });
+                }
+            });
+            
+            chart.data.datasets = datasets;
+            chart.update();
+            
+            // Update active metrics count
+            document.getElementById('activeMetrics').textContent = activeMetrics.size;
+            document.getElementById('activeMetrics').title = `Showing ${activeMetrics.size} metrics`;
         }
 
         async function fetchUSIDData() {
@@ -479,8 +718,7 @@
 
         function updateChart(data) {
             // Group data by date and metric
-            // Negative values are set to 0 for display
-            const groupedData = {};
+            allChartData = {};
             const allDates = new Set();
             const allMetrics = new Set();
 
@@ -490,34 +728,36 @@
                 // Set negative values to 0
                 const failures = Math.max(0, Number(record.EXTRAFAILURES) || 0);
 
-                if (!groupedData[metric]) {
-                    groupedData[metric] = {};
+                if (!allChartData[metric]) {
+                    allChartData[metric] = {};
                 }
 
                 allDates.add(date);
                 allMetrics.add(metric);
 
                 // Aggregate if multiple records for same date
-                if (groupedData[metric][date]) {
-                    groupedData[metric][date] += failures;
+                if (allChartData[metric][date]) {
+                    allChartData[metric][date] += failures;
                 } else {
-                    groupedData[metric][date] = failures;
+                    allChartData[metric][date] = failures;
                 }
             });
 
             // Sort dates
             const sortedDates = Array.from(allDates).sort();
 
+            // Create metric badges
+            const metricFilter = document.getElementById('metricFilter').value;
+            const metricsToShow = metricFilter ? [metricFilter] : Array.from(allMetrics);
+            createMetricBadges(metricsToShow);
+
             // Prepare datasets for chart
             const datasets = [];
-            const metricFilter = document.getElementById('metricFilter').value;
 
-            Object.keys(groupedData).forEach(metric => {
-                if (metricFilter && metric !== metricFilter) return;
-
+            metricsToShow.forEach(metric => {
                 const data = sortedDates.map(date => ({
                     x: date,
-                    y: groupedData[metric][date] || 0
+                    y: allChartData[metric][date] || 0
                 }));
 
                 datasets.push({
@@ -571,6 +811,11 @@
                                 font: {
                                     size: 12
                                 }
+                            },
+                            onClick: (e, legendItem, legend) => {
+                                const index = legendItem.datasetIndex;
+                                const metric = legend.chart.data.datasets[index].label;
+                                toggleMetric(metric);
                             }
                         },
                         tooltip: {
@@ -685,9 +930,13 @@
 
         function updateStatistics(data) {
             const metricFilter = document.getElementById('metricFilter').value;
-            const filteredData = metricFilter ?
-                data.filter(d => (d.METRIC_DISPLAY || d.METRICNAME) === metricFilter) :
-                data;
+            
+            // Filter data based on active metrics and metric filter
+            const filteredData = data.filter(d => {
+                const metric = d.METRIC_DISPLAY || d.METRICNAME;
+                if (metricFilter && metric !== metricFilter) return false;
+                return activeMetrics.has(metric);
+            });
 
             // Set negative values to 0 for all failure values
             const failures = filteredData.map(d => Math.max(0, Number(d.EXTRAFAILURES) || 0));
@@ -695,24 +944,22 @@
                 failures.reduce((a, b) => a + b, 0) / failures.length : 0;
             const peakFailures = failures.length > 0 ? Math.max(...failures) : 0;
 
-            const uniqueMetrics = new Set(data.map(d => d.METRIC_DISPLAY || d.METRICNAME));
-
             // Update values with compact display but full value in title
             const avgElement = document.getElementById('avgFailures');
             avgElement.textContent = formatCompactNumber(avgFailures);
-            avgElement.title = `Average: ${Math.round(avgFailures).toLocaleString()} failures`;
+            avgElement.title = `Average: ${Math.round(avgFailures).toLocaleString()} failures (visible metrics only)`;
 
             const peakElement = document.getElementById('peakFailures');
             peakElement.textContent = formatCompactNumber(peakFailures);
-            peakElement.title = `Peak: ${Math.round(peakFailures).toLocaleString()} failures`;
+            peakElement.title = `Peak: ${Math.round(peakFailures).toLocaleString()} failures (visible metrics only)`;
 
             const pointsElement = document.getElementById('dataPoints');
             pointsElement.textContent = filteredData.length;
-            pointsElement.title = `${filteredData.length} measurements`;
+            pointsElement.title = `${filteredData.length} measurements (visible metrics only)`;
 
             const metricsElement = document.getElementById('activeMetrics');
-            metricsElement.textContent = metricFilter ? 1 : uniqueMetrics.size;
-            metricsElement.title = metricFilter ? `Showing: ${metricFilter}` : `${uniqueMetrics.size} different metrics`;
+            metricsElement.textContent = activeMetrics.size;
+            metricsElement.title = `Showing ${activeMetrics.size} metrics`;
         }
 
         function generateSampleData() {
@@ -797,10 +1044,25 @@
             fetchUSIDData();
         });
 
-        // Keyboard shortcut for toggling legend (press 'L')
+        // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (e.key === 'l' || e.key === 'L') {
                 toggleLegend();
+            } else if (e.key === 'a' || e.key === 'A') {
+                if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    showAllMetrics();
+                }
+            } else if (e.key === 'd' || e.key === 'D') {
+                if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    hideAllMetrics();
+                }
+            } else if (e.key === 'i' || e.key === 'I') {
+                if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    invertSelection();
+                }
             }
         });
 
