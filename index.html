@@ -127,6 +127,13 @@
             border-color: #667eea;
         }
 
+        .multi-select-input.disabled {
+            background-color: #f7fafc;
+            color: #a0aec0;
+            cursor: not-allowed;
+            border-color: #e2e8f0;
+        }
+
         .multi-select-text {
             flex: 1;
             overflow: hidden;
@@ -339,59 +346,6 @@
             color: #667eea;
         }
 
-        /* Sort/Filter dropdown menu */
-        .sort-menu {
-            position: absolute;
-            top: 100%;
-            left: 0;
-            background: white;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            z-index: 1001;
-            min-width: 200px;
-            display: none;
-            margin-top: 5px;
-        }
-
-        .sort-menu.open {
-            display: block;
-        }
-
-        .sort-menu-item {
-            padding: 10px 15px;
-            cursor: pointer;
-            transition: background-color 0.2s ease;
-            border-bottom: 1px solid #f0f4f8;
-        }
-
-        .sort-menu-item:hover {
-            background: #f7fafc;
-        }
-
-        .sort-menu-item.active {
-            background: #e6f7ff;
-            color: #667eea;
-            font-weight: 600;
-        }
-
-        .sort-menu-divider {
-            border-bottom: 2px solid #e2e8f0;
-            margin: 5px 0;
-        }
-
-        .sort-menu-header {
-            padding: 8px 15px;
-            font-weight: 600;
-            color: #4a5568;
-            background: #f7fafc;
-            font-size: 0.85rem;
-        }
-
-        .filter-checkbox {
-            margin-right: 8px;
-        }
-
         td {
             padding: 12px;
             border-bottom: 1px solid #e2e8f0;
@@ -555,14 +509,24 @@
                 </div>
                 <div class="filter-group">
                     <label for="district">District
+                        <span id="districtCount" class="selected-count" style="display: none;">0</span>
                         <span id="districtDependentBadge" class="filter-dependent" style="display: none;">Requires Submarket</span>
                     </label>
-                    <select id="district" disabled>
-                        <option value="">All Districts</option>
-                    </select>
+                    <div class="multi-select-container">
+                        <div class="multi-select-input disabled" id="districtInput">
+                            <span class="multi-select-text" id="districtText">Select a Submarket first</span>
+                            <span class="multi-select-arrow" id="districtArrow"></span>
+                        </div>
+                        <div class="multi-select-dropdown" id="districtDropdown">
+                            <div class="multi-select-option multi-select-all">
+                                <input type="checkbox" id="selectAllDistricts">
+                                <label for="selectAllDistricts">Select All</label>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="filter-group">
-                    <label for="cqeCluster">CQX Cluster
+                    <label for="cqeCluster">CQE Cluster
                         <span id="clusterCount" class="selected-count" style="display: none;">0</span>
                     </label>
                     <div class="multi-select-container">
@@ -623,8 +587,8 @@
 
             <div class="info-note">
                 <strong>🔄 Cascading Filters:</strong> When you select a Submarket, both the District dropdown and CQE Cluster dropdown update automatically.<br><br>
-                <strong>📍 District Filter:</strong> The District filter is only available when a Submarket is selected. It filters data to show only USIDs from that district.<br>
-                <strong>📊 Multi-Select CQX Clusters:</strong> You can select multiple CQX Clusters to filter data. The clusters shown depend on your selected submarket.<br>
+                <strong>📍 Multi-Select Districts:</strong> Once a Submarket is selected, you can choose multiple districts using checkboxes to filter data to specific districts.<br>
+                <strong>📊 Multi-Select CQE Clusters:</strong> You can select multiple CQE Clusters to filter data. The clusters shown depend on your selected submarket.<br>
                 <strong>🔍 Quick USID Lookup:</strong> Enter a USID in the filter field and press Enter to open its detail page in a new tab.<br>
                 <strong>Contribution Ranking:</strong> Smallest to largest (most negative/worst values first).<br>
                 <strong>Failures Ranking:</strong> Largest to smallest (highest failure counts first).<br>
@@ -647,7 +611,7 @@
                                 <th>Contribution</th>
                                 <th>Total Failures</th>
                                 <th>Vendor</th>
-                                <th>CQX Cluster</th>
+                                <th>CQE Cluster</th>
                                 <th>Severity</th>
                             </tr>
                         </thead>
@@ -668,14 +632,16 @@
         let apiAvailable = false;
         let metricMapping = {};
         let selectedClusters = [];
+        let selectedDistricts = [];
         let allClusters = [];
+        let allDistricts = [];
         let submarketClusters = {};
         let currentSubmarketClusters = [];
         let availableDistricts = [];
         let currentSort = { column: null, direction: 'asc' };
         let columnFilters = {};
         let showDistrict = false;
-        let pendingSubmarket = null;  // Store submarket selection until Apply Filters is clicked
+        let pendingSubmarket = null;
 
         // Utility functions for number formatting
         function formatCompactNumber(num) {
@@ -729,37 +695,13 @@
             return Math.round(num).toLocaleString();
         }
 
-        // Initialize multi-select dropdown
+        // Initialize multi-select dropdowns
         function initializeMultiSelect() {
-            const input = document.getElementById('cqeClusterInput');
-            const dropdown = document.getElementById('cqeClusterDropdown');
-            const arrow = document.getElementById('cqeClusterArrow');
-
-            // Toggle dropdown on input click
-            input.addEventListener('click', function (e) {
-                e.stopPropagation();
-                dropdown.classList.toggle('open');
-                arrow.classList.toggle('open');
-                input.classList.toggle('active');
-            });
-
-            // Close dropdown when clicking outside
-            document.addEventListener('click', function (e) {
-                if (!e.target.closest('.multi-select-container')) {
-                    dropdown.classList.remove('open');
-                    arrow.classList.remove('open');
-                    input.classList.remove('active');
-                }
-            });
-
-            // Handle select all checkbox
-            document.getElementById('selectAllClusters').addEventListener('change', function () {
-                const checkboxes = dropdown.querySelectorAll('input[type="checkbox"]:not(#selectAllClusters):not(:disabled)');
-                checkboxes.forEach(cb => {
-                    cb.checked = this.checked;
-                });
-                updateSelectedClusters();
-            });
+            // Initialize CQE Cluster multi-select
+            initializeClusterMultiSelect();
+            
+            // Initialize District multi-select
+            initializeDistrictMultiSelect();
 
             // Add submarket change listener for cascading filter
             document.getElementById('submarket').addEventListener('change', function () {
@@ -771,18 +713,19 @@
                 loadDistrictsForSubmarket(selectedSubmarket);
                 
                 // Enable/disable district dropdown
-                const districtDropdown = document.getElementById('district');
+                const districtInput = document.getElementById('districtInput');
                 const districtBadge = document.getElementById('districtDependentBadge');
                 
                 if (selectedSubmarket) {
-                    districtDropdown.disabled = false;
+                    districtInput.classList.remove('disabled');
                     districtBadge.style.display = 'none';
                     console.log('📍 District filter enabled for submarket:', selectedSubmarket);
                 } else {
-                    districtDropdown.disabled = true;
-                    districtDropdown.value = '';
+                    districtInput.classList.add('disabled');
                     districtBadge.style.display = 'inline-block';
-                    populateDistrictDropdown([]);
+                    selectedDistricts = [];
+                    populateDistrictMultiSelect([]);
+                    updateSelectedDistricts();
                     console.log('📍 District filter disabled - no submarket selected');
                 }
                 
@@ -792,12 +735,69 @@
             });
         }
 
+        // Initialize Cluster multi-select
+        function initializeClusterMultiSelect() {
+            const input = document.getElementById('cqeClusterInput');
+            const dropdown = document.getElementById('cqeClusterDropdown');
+            const arrow = document.getElementById('cqeClusterArrow');
+
+            input.addEventListener('click', function (e) {
+                e.stopPropagation();
+                dropdown.classList.toggle('open');
+                arrow.classList.toggle('open');
+                input.classList.toggle('active');
+            });
+
+            document.getElementById('selectAllClusters').addEventListener('change', function () {
+                const checkboxes = dropdown.querySelectorAll('input[type="checkbox"]:not(#selectAllClusters):not(:disabled)');
+                checkboxes.forEach(cb => {
+                    cb.checked = this.checked;
+                });
+                updateSelectedClusters();
+            });
+        }
+
+        // Initialize District multi-select
+        function initializeDistrictMultiSelect() {
+            const input = document.getElementById('districtInput');
+            const dropdown = document.getElementById('districtDropdown');
+            const arrow = document.getElementById('districtArrow');
+
+            input.addEventListener('click', function (e) {
+                if (!input.classList.contains('disabled')) {
+                    e.stopPropagation();
+                    dropdown.classList.toggle('open');
+                    arrow.classList.toggle('open');
+                    input.classList.toggle('active');
+                }
+            });
+
+            document.getElementById('selectAllDistricts').addEventListener('change', function () {
+                const checkboxes = dropdown.querySelectorAll('input[type="checkbox"]:not(#selectAllDistricts)');
+                checkboxes.forEach(cb => {
+                    cb.checked = this.checked;
+                });
+                updateSelectedDistricts();
+            });
+
+            // Close dropdowns when clicking outside
+            document.addEventListener('click', function (e) {
+                if (!e.target.closest('.multi-select-container')) {
+                    dropdown.classList.remove('open');
+                    arrow.classList.remove('open');
+                    input.classList.remove('active');
+                    
+                    document.getElementById('cqeClusterDropdown').classList.remove('open');
+                    document.getElementById('cqeClusterArrow').classList.remove('open');
+                    document.getElementById('cqeClusterInput').classList.remove('active');
+                }
+            });
+        }
+
         // Load districts for selected submarket
         async function loadDistrictsForSubmarket(submarket) {
-            const districtDropdown = document.getElementById('district');
-            
             if (!submarket) {
-                populateDistrictDropdown([]);
+                populateDistrictMultiSelect([]);
                 return;
             }
             
@@ -808,36 +808,113 @@
                     if (response.ok) {
                         const data = await response.json();
                         availableDistricts = data.districts || [];
+                        allDistricts = availableDistricts;
                         console.log(`📍 Loaded ${availableDistricts.length} districts for ${submarket}`);
-                        populateDistrictDropdown(availableDistricts);
+                        populateDistrictMultiSelect(availableDistricts);
                     } else {
                         console.log('⚠️ Could not load districts from server');
-                        populateDistrictDropdown([]);
+                        populateDistrictMultiSelect([]);
                     }
                 } catch (error) {
                     console.error('Error loading districts:', error);
-                    populateDistrictDropdown([]);
+                    populateDistrictMultiSelect([]);
                 }
             } else {
                 // Use sample districts for demo
                 const sampleDistricts = ['86A', '86B', '86C', '86D', '86E', '86F', '86G', '86H'];
                 availableDistricts = sampleDistricts;
-                populateDistrictDropdown(sampleDistricts);
+                allDistricts = sampleDistricts;
+                populateDistrictMultiSelect(sampleDistricts);
             }
         }
 
-        // Populate district dropdown
-        function populateDistrictDropdown(districts) {
-            const dropdown = document.getElementById('district');
-            dropdown.innerHTML = '<option value="">All Districts</option>';
+        // Populate district multi-select dropdown
+        function populateDistrictMultiSelect(districts) {
+            const dropdown = document.getElementById('districtDropdown');
+            const selectAllOption = dropdown.querySelector('.multi-select-all');
+            
+            // Clear everything except select all
+            while (dropdown.children.length > 1) {
+                dropdown.removeChild(dropdown.lastChild);
+            }
             
             if (districts && districts.length > 0) {
                 districts.forEach(district => {
-                    const option = document.createElement('option');
-                    option.value = district;
-                    option.textContent = district;
-                    dropdown.appendChild(option);
+                    const div = document.createElement('div');
+                    div.className = 'multi-select-option';
+                    
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.id = `district_${district.replace(/\s/g, '_')}`;
+                    checkbox.value = district;
+                    checkbox.addEventListener('change', updateSelectedDistricts);
+                    
+                    const label = document.createElement('label');
+                    label.setAttribute('for', checkbox.id);
+                    label.textContent = district;
+                    
+                    div.appendChild(checkbox);
+                    div.appendChild(label);
+                    dropdown.appendChild(div);
                 });
+                
+                // Update display text
+                const textElement = document.getElementById('districtText');
+                textElement.textContent = 'All Districts';
+            } else {
+                // Show message if no districts available
+                const div = document.createElement('div');
+                div.className = 'multi-select-option';
+                div.style.fontStyle = 'italic';
+                div.style.color = '#718096';
+                div.style.cursor = 'default';
+                div.textContent = 'No districts available for this submarket';
+                dropdown.appendChild(div);
+                
+                const textElement = document.getElementById('districtText');
+                textElement.textContent = 'No districts available';
+            }
+        }
+
+        // Update selected districts array and display
+        function updateSelectedDistricts() {
+            const dropdown = document.getElementById('districtDropdown');
+            const checkboxes = dropdown.querySelectorAll('input[type="checkbox"]:not(#selectAllDistricts):checked');
+            const allCheckboxes = dropdown.querySelectorAll('input[type="checkbox"]:not(#selectAllDistricts)');
+            const selectAllCheckbox = document.getElementById('selectAllDistricts');
+            const textElement = document.getElementById('districtText');
+            const countElement = document.getElementById('districtCount');
+
+            selectedDistricts = Array.from(checkboxes).map(cb => cb.value);
+
+            // Update select all checkbox state
+            if (allCheckboxes.length > 0) {
+                if (checkboxes.length === allCheckboxes.length) {
+                    selectAllCheckbox.checked = true;
+                    selectAllCheckbox.indeterminate = false;
+                } else if (checkboxes.length > 0) {
+                    selectAllCheckbox.checked = false;
+                    selectAllCheckbox.indeterminate = true;
+                } else {
+                    selectAllCheckbox.checked = false;
+                    selectAllCheckbox.indeterminate = false;
+                }
+            }
+
+            // Update display text
+            if (allCheckboxes.length === 0) {
+                textElement.textContent = 'No districts available';
+                countElement.style.display = 'none';
+            } else if (selectedDistricts.length === 0 || selectedDistricts.length === allCheckboxes.length) {
+                textElement.textContent = 'All Districts';
+                countElement.style.display = 'none';
+            } else if (selectedDistricts.length === 1) {
+                textElement.textContent = selectedDistricts[0];
+                countElement.style.display = 'none';
+            } else {
+                textElement.textContent = `${selectedDistricts.length} districts selected`;
+                countElement.textContent = selectedDistricts.length;
+                countElement.style.display = 'inline-block';
             }
         }
 
@@ -957,7 +1034,7 @@
             }
         }
 
-        // Populate multi-select dropdown with options
+        // Populate multi-select dropdown with options (for clusters)
         function populateMultiSelect(elementId, options) {
             const dropdown = document.getElementById(`${elementId}Dropdown`);
 
@@ -1162,16 +1239,16 @@
         async function fetchData() {
             const sortingCriteria = document.getElementById('sortingCriteria').value;
             const clusterValues = selectedClusters.length > 0 ? selectedClusters.join(',') : '';
+            const districtValues = selectedDistricts.length > 0 ? selectedDistricts.join(',') : '';
             const submarket = document.getElementById('submarket').value;
-            const district = document.getElementById('district').value;
 
             // Update district visibility when Apply Filters is clicked
             updateDistrictVisibility(submarket);
-            pendingSubmarket = submarket;  // Update pending to match current
+            pendingSubmarket = submarket;
 
             const filters = {
                 submarket: submarket,
-                district: district,
+                district: districtValues,
                 cqeClusters: clusterValues,
                 periodStart: document.getElementById('periodStart').value,
                 periodEnd: document.getElementById('periodEnd').value,
@@ -1183,7 +1260,7 @@
             console.log('🔄 Starting fetchData with filters:', filters);
             console.log('📊 Ranking criteria:', sortingCriteria);
             console.log('📍 Selected clusters:', selectedClusters);
-            console.log('📍 District filter:', district || 'All');
+            console.log('📍 Selected districts:', selectedDistricts);
             console.log('📍 District data:', submarket ? 'Will be loaded' : 'Not applicable');
             showLoading();
 
@@ -1287,7 +1364,6 @@
 
             const selectedMetric = document.getElementById('metricName').value;
             const selectedSubmarket = document.getElementById('submarket').value;
-            const selectedDistrict = document.getElementById('district').value;
 
             // Filter clusters based on selection and submarket
             let availableClusters = clusters;
@@ -1305,18 +1381,15 @@
                     // Assign district based on selection or randomly if no selection
                     let assignedDistrict;
                     if (selectedSubmarket) {
-                        if (selectedDistrict) {
-                            assignedDistrict = selectedDistrict;
+                        if (selectedDistricts.length > 0) {
+                            // Pick from selected districts
+                            assignedDistrict = selectedDistricts[Math.floor(Math.random() * selectedDistricts.length)];
                         } else {
+                            // Pick from all districts
                             assignedDistrict = districts[Math.floor(Math.random() * districts.length)];
                         }
                     } else {
                         assignedDistrict = null;
-                    }
-                    
-                    // Skip this record if district filter is set and doesn't match
-                    if (selectedDistrict && assignedDistrict !== selectedDistrict) {
-                        continue;
                     }
 
                     let avgFailures;
@@ -1510,388 +1583,4 @@
                 `;
                 tbody.appendChild(tr);
             });
-
-            // Initialize table headers for sorting/filtering on first load
-            if (!document.querySelector('.sort-menu')) {
-                initializeTableHeaders();
-            }
         }
-
-        // Sort data by column
-        function sortData(column, direction) {
-            displayData.sort((a, b) => {
-                let aVal = a[column];
-                let bVal = b[column];
-
-                // Handle numeric columns
-                if (column === 'IDXCONTR' || column === 'AVG_IDXCONTR' ||
-                    column === 'TOTAL_EXTRAFAILURES' || column === 'EXTRAFAILURES' ||
-                    column === 'RECORD_COUNT') {
-                    aVal = Number(aVal) || 0;
-                    bVal = Number(bVal) || 0;
-                }
-                // Handle string columns
-                else if (typeof aVal === 'string') {
-                    aVal = aVal.toLowerCase();
-                    bVal = bVal ? bVal.toLowerCase() : '';
-                }
-
-                if (direction === 'asc') {
-                    return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
-                } else {
-                    return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
-                }
-            });
-
-            currentSort = { column, direction };
-            updateTable(displayData);
-        }
-
-        // Filter data by column values
-        function filterData() {
-            displayData = [...currentData];
-
-            // Apply filters
-            Object.keys(columnFilters).forEach(column => {
-                const filterValues = columnFilters[column];
-                if (filterValues && filterValues.length > 0) {
-                    displayData = displayData.filter(row => {
-                        const value = row[column] || '';
-                        return filterValues.includes(value.toString());
-                    });
-                }
-            });
-
-            // Reapply current sort if exists
-            if (currentSort.column) {
-                sortData(currentSort.column, currentSort.direction);
-            } else {
-                updateTable(displayData);
-            }
-        }
-
-        // Calculate severity for filtering
-        function calculateSeverity(row) {
-            const sortingCriteria = document.getElementById('sortingCriteria').value;
-
-            // Calculate total for percentage
-            let datasetTotal = 0;
-            if (sortingCriteria === 'contribution') {
-                datasetTotal = displayData.reduce((sum, r) => {
-                    const contrib = Number(r.IDXCONTR) || Number(r.AVG_IDXCONTR) || 0;
-                    const total = r.TOTAL_IDXCONTR ? Number(r.TOTAL_IDXCONTR) : contrib * (r.RECORD_COUNT || 1);
-                    return sum + Math.abs(total);
-                }, 0);
-            } else {
-                datasetTotal = displayData.reduce((sum, r) => {
-                    const total = r.TOTAL_EXTRAFAILURES ?
-                        Math.max(0, Number(r.TOTAL_EXTRAFAILURES)) :
-                        Math.max(0, Number(r.AVG_EXTRAFAILURES || r.EXTRAFAILURES) || 0) * (r.RECORD_COUNT || 1);
-                    return sum + (isFinite(total) ? total : 0);
-                }, 0);
-            }
-
-            const contribution = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
-            const totalContribution = Number(row.TOTAL_IDXCONTR) || (contribution * (row.RECORD_COUNT || 1));
-            const totalFailures = Math.max(0, Number(row.TOTAL_EXTRAFAILURES) ||
-                (Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0) * (row.RECORD_COUNT || 1)));
-
-            let percentageOfTotal;
-            if (sortingCriteria === 'contribution') {
-                percentageOfTotal = datasetTotal !== 0 ? (Math.abs(totalContribution) / datasetTotal) * 100 : 0;
-            } else {
-                percentageOfTotal = datasetTotal > 0 ? (totalFailures / datasetTotal) * 100 : 0;
-            }
-
-            if (Math.abs(percentageOfTotal) >= 5) return 'CRITICAL';
-            else if (Math.abs(percentageOfTotal) >= 2.5) return 'HIGH';
-            else if (Math.abs(percentageOfTotal) >= 0.5) return 'MEDIUM';
-            else return 'LOW';
-        }
-
-        // Create sort/filter menu for a column
-        function createSortMenu(column, columnIndex, uniqueValues) {
-            const menu = document.createElement('div');
-            menu.className = 'sort-menu';
-            menu.id = `sort-menu-${columnIndex}`;
-
-            // Sort options
-            const sortHeader = document.createElement('div');
-            sortHeader.className = 'sort-menu-header';
-            sortHeader.textContent = 'Sort';
-            menu.appendChild(sortHeader);
-
-            const ascItem = document.createElement('div');
-            ascItem.className = 'sort-menu-item';
-            ascItem.textContent = '↑ Ascending';
-            ascItem.onclick = (e) => {
-                e.stopPropagation();
-                sortData(column, 'asc');
-                closeAllSortMenus();
-                document.querySelectorAll('th').forEach(th => th.classList.remove('sorted-asc', 'sorted-desc'));
-                document.querySelector(`th:nth-child(${columnIndex + 1})`).classList.add('sorted-asc');
-            };
-            menu.appendChild(ascItem);
-
-            const descItem = document.createElement('div');
-            descItem.className = 'sort-menu-item';
-            descItem.textContent = '↓ Descending';
-            descItem.onclick = (e) => {
-                e.stopPropagation();
-                sortData(column, 'desc');
-                closeAllSortMenus();
-                document.querySelectorAll('th').forEach(th => th.classList.remove('sorted-asc', 'sorted-desc'));
-                document.querySelector(`th:nth-child(${columnIndex + 1})`).classList.add('sorted-desc');
-            };
-            menu.appendChild(descItem);
-
-            // Add filter options if there are unique values (increase limit for CQE Cluster)
-            const maxFilterItems = column === 'CQECLUSTER' ? 50 : 20;
-            if (uniqueValues && uniqueValues.length > 0 && uniqueValues.length <= maxFilterItems) {
-                const divider = document.createElement('div');
-                divider.className = 'sort-menu-divider';
-                menu.appendChild(divider);
-
-                const filterHeader = document.createElement('div');
-                filterHeader.className = 'sort-menu-header';
-                filterHeader.textContent = 'Filter';
-                menu.appendChild(filterHeader);
-
-                uniqueValues.forEach(value => {
-                    const filterItem = document.createElement('div');
-                    filterItem.className = 'sort-menu-item';
-
-                    const checkbox = document.createElement('input');
-                    checkbox.type = 'checkbox';
-                    checkbox.className = 'filter-checkbox';
-                    checkbox.value = value;
-                    checkbox.checked = !columnFilters[column] || columnFilters[column].length === 0 ||
-                        columnFilters[column].includes(value.toString());
-
-                    checkbox.onclick = (e) => {
-                        e.stopPropagation();
-
-                        if (!columnFilters[column]) {
-                            columnFilters[column] = [];
-                        }
-
-                        if (checkbox.checked) {
-                            // Add to filter
-                            if (!columnFilters[column].includes(value.toString())) {
-                                columnFilters[column].push(value.toString());
-                            }
-                        } else {
-                            // Remove from filter
-                            const index = columnFilters[column].indexOf(value.toString());
-                            if (index > -1) {
-                                columnFilters[column].splice(index, 1);
-                            }
-                        }
-
-                        // If all are selected, remove the filter
-                        if (columnFilters[column].length === uniqueValues.length ||
-                            columnFilters[column].length === 0) {
-                            delete columnFilters[column];
-                        }
-
-                        filterData();
-                    };
-
-                    const label = document.createElement('label');
-                    label.style.cursor = 'pointer';
-                    label.style.display = 'flex';
-                    label.style.alignItems = 'center';
-                    label.appendChild(checkbox);
-                    label.appendChild(document.createTextNode(value || '(empty)'));
-
-                    filterItem.appendChild(label);
-                    filterItem.onclick = (e) => {
-                        e.stopPropagation();
-                        checkbox.click();
-                    };
-
-                    menu.appendChild(filterItem);
-                });
-            }
-
-            return menu;
-        }
-
-        // Close all sort menus
-        function closeAllSortMenus() {
-            document.querySelectorAll('.sort-menu').forEach(menu => {
-                menu.classList.remove('open');
-            });
-        }
-
-        // Initialize table headers with click handlers
-        function initializeTableHeaders() {
-            const headers = document.querySelectorAll('#dataTable th');
-            const columnMappings = ['rank', 'USID', 'DISTRICT', 'METRIC_DISPLAY', 'IDXCONTR', 'TOTAL_EXTRAFAILURES', 'VENDOR', 'CQECLUSTER', 'severity'];
-
-            headers.forEach((th, index) => {
-                th.style.position = 'relative';
-
-                th.onclick = (e) => {
-                    e.stopPropagation();
-
-                    // Close other menus
-                    document.querySelectorAll('.sort-menu').forEach((menu, menuIndex) => {
-                        if (menuIndex !== index) {
-                            menu.classList.remove('open');
-                        }
-                    });
-
-                    // Toggle current menu
-                    let menu = document.getElementById(`sort-menu-${index}`);
-                    if (menu) {
-                        menu.classList.toggle('open');
-                    } else {
-                        // Create menu if it doesn't exist
-                        if (index === 0) return; // Skip rank column
-
-                        const column = columnMappings[index];
-                        if (!column) return;
-
-                        // Get unique values for filter options (for certain columns)
-                        let uniqueValues = [];
-                        if (column === 'VENDOR' || column === 'CQECLUSTER' || column === 'severity' ||
-                            column === 'METRIC_DISPLAY' || column === 'DISTRICT') {
-                            uniqueValues = [...new Set(displayData.map(row => {
-                                if (column === 'severity') {
-                                    return row.severity || calculateSeverity(row);
-                                }
-                                return row[column] || '';
-                            }))].sort();
-                        }
-
-                        menu = createSortMenu(column, index, uniqueValues);
-                        th.appendChild(menu);
-                        menu.classList.add('open');
-                    }
-                };
-            });
-
-            // Close menus when clicking outside
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('th') && !e.target.closest('.sort-menu')) {
-                    closeAllSortMenus();
-                }
-            });
-        }
-
-        function resetFilters() {
-            document.getElementById('submarket').value = '';
-            document.getElementById('district').value = '';
-            document.getElementById('district').disabled = true;
-
-            // Reset cascading filter
-            currentSubmarketClusters = allClusters;
-            document.getElementById('cqeClusterInput').classList.remove('filtered');
-
-            // Reset multi-select clusters
-            const checkboxes = document.querySelectorAll('#cqeClusterDropdown input[type="checkbox"]');
-            checkboxes.forEach(cb => cb.checked = false);
-            selectedClusters = [];
-
-            // Repopulate with all clusters
-            populateMultiSelect('cqeCluster', allClusters);
-            updateSelectedClusters();
-
-            // Reset district visibility
-            updateDistrictVisibility('');
-            pendingSubmarket = null;
-
-            document.getElementById('metricName').value = '';
-            document.getElementById('usid').value = '';
-            document.getElementById('sortingCriteria').value = 'contribution';
-            setDefaultDates();
-
-            // Clear column filters and sort
-            columnFilters = {};
-            currentSort = { column: null, direction: 'asc' };
-
-            fetchData();
-        }
-
-        function exportData() {
-            if (currentData.length === 0) {
-                alert('No data to export');
-                return;
-            }
-
-            const sortingCriteria = document.getElementById('sortingCriteria').value;
-            const isShowingAllMetrics = currentData.length > 0 &&
-                (currentData[0].METRIC_DISPLAY === 'All' || currentData[0].METRICNAME === 'ALL');
-
-            const sortedData = currentData;
-
-            const exportData = sortedData.map((row, index) => {
-                const contribution = Number(row.IDXCONTR) || Number(row.AVG_IDXCONTR) || 0;
-                const totalContribution = Number(row.TOTAL_IDXCONTR) || contribution;
-                const avgFailures = Math.max(0, Number(row.AVG_EXTRAFAILURES || row.EXTRAFAILURES) || 0);
-                const totalFailures = Math.max(0, Number(row.TOTAL_EXTRAFAILURES) || (avgFailures * (row.RECORD_COUNT || 1)));
-                const validAvg = isFinite(avgFailures) ? Math.round(avgFailures) : 0;
-                const validTotal = isFinite(totalFailures) ? Math.round(totalFailures) : 0;
-
-                const exportRow = {
-                    Rank: index + 1,
-                    USID: row.USID || '',
-                    District: row.DISTRICT || '-',
-                    MetricName: row.METRIC_DISPLAY || row.METRICNAME || '',
-                    Contribution: contribution.toFixed(4),
-                    TotalContribution: totalContribution.toFixed(4),
-                    TotalFailures: validTotal,
-                    RecordCount: row.RECORD_COUNT || 1,
-                    Vendor: row.VENDOR || '',
-                    Cluster: row.CQECLUSTER || '',
-                    Submarket: row.SUBMKT || ''
-                };
-
-                exportRow.EarliestPeriod = row.EARLIEST_PERIOD || '';
-                exportRow.LatestPeriod = row.LATEST_PERIOD || '';
-                exportRow.AggregationType = isShowingAllMetrics ? 'All Metrics' : 'Single Metric';
-                exportRow.SortedBy = sortingCriteria === 'contribution' ? 'Contribution (Worst First)' : 'Total Failures (Highest First)';
-
-                return exportRow;
-            });
-
-            const headers = Object.keys(exportData[0]);
-            const csvContent = [
-                headers.join(','),
-                ...exportData.map(row => headers.map(h => {
-                    const value = String(row[h] || '');
-                    return value.includes(',') || value.includes('"') || value.includes('\n')
-                        ? `"${value.replace(/"/g, '""')}"`
-                        : value;
-                }).join(','))
-            ].join('\n');
-
-            const blob = new Blob([csvContent], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-
-            const sortType = sortingCriteria === 'contribution' ? 'contrib_worst_first' : 'failures_highest_first';
-            const fileName = isShowingAllMetrics ?
-                `cqi_offenders_all_metrics_${sortType}_${new Date().toISOString().split('T')[0]}.csv` :
-                `cqi_offenders_filtered_${sortType}_${new Date().toISOString().split('T')[0]}.csv`;
-
-            a.download = fileName;
-            a.click();
-            window.URL.revokeObjectURL(url);
-        }
-
-        function showLoading() {
-            document.querySelector('.loading').style.display = 'block';
-            document.querySelector('.table-container').style.display = 'none';
-        }
-
-        function hideLoading() {
-            document.querySelector('.loading').style.display = 'none';
-            document.querySelector('.table-container').style.display = 'block';
-        }
-    </script>
-</body>
-
-</html>
