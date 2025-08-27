@@ -88,6 +88,12 @@
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
 
+        .filter-group select:disabled {
+            background-color: #f7fafc;
+            color: #a0aec0;
+            cursor: not-allowed;
+        }
+
         /* Multi-select dropdown styles */
         .multi-select-container {
             position: relative;
@@ -215,6 +221,16 @@
             display: inline-block;
             background: #fef3c7;
             color: #92400e;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            margin-left: 5px;
+        }
+
+        .filter-dependent {
+            display: inline-block;
+            background: #e0e7ff;
+            color: #3730a3;
             padding: 2px 8px;
             border-radius: 12px;
             font-size: 0.75rem;
@@ -538,6 +554,14 @@
                     </select>
                 </div>
                 <div class="filter-group">
+                    <label for="district">District
+                        <span id="districtDependentBadge" class="filter-dependent" style="display: none;">Requires Submarket</span>
+                    </label>
+                    <select id="district" disabled>
+                        <option value="">All Districts</option>
+                    </select>
+                </div>
+                <div class="filter-group">
                     <label for="cqeCluster">CQX Cluster
                         <span id="clusterCount" class="selected-count" style="display: none;">0</span>
                     </label>
@@ -598,14 +622,10 @@
             </div>
 
             <div class="info-note">
-                <strong>🔄 Cascading Filters:</strong> When you select a Submarket, the CQE Cluster dropdown
-                automatically updates to show only clusters within that submarket.<br><br>
-                <strong>📍 District Column:</strong> When a Submarket is selected, the District column appears showing
-                district information from the corresponding CSV file.<br>
-                <strong>📊 Multi-Select CQX Clusters:</strong> You can select multiple CQX Clusters to filter data. The
-                clusters shown depend on your selected submarket.<br>
-                <strong>🔍 Quick USID Lookup:</strong> Enter a USID in the filter field and press Enter to open its
-                detail page in a new tab.<br>
+                <strong>🔄 Cascading Filters:</strong> When you select a Submarket, both the District dropdown and CQE Cluster dropdown update automatically.<br><br>
+                <strong>📍 District Filter:</strong> The District filter is only available when a Submarket is selected. It filters data to show only USIDs from that district.<br>
+                <strong>📊 Multi-Select CQX Clusters:</strong> You can select multiple CQX Clusters to filter data. The clusters shown depend on your selected submarket.<br>
+                <strong>🔍 Quick USID Lookup:</strong> Enter a USID in the filter field and press Enter to open its detail page in a new tab.<br>
                 <strong>Contribution Ranking:</strong> Smallest to largest (most negative/worst values first).<br>
                 <strong>Failures Ranking:</strong> Largest to smallest (highest failure counts first).<br>
                 <strong>Dynamic Severity:</strong> CRITICAL ≥5% | HIGH 2.5-5% | MEDIUM 0.5-2.5% | LOW <0.5%
@@ -622,12 +642,12 @@
                             <tr id="tableHeaders">
                                 <th>Rank</th>
                                 <th>USID</th>
+                                <th>District</th>
                                 <th>Metric Name</th>
                                 <th>Contribution</th>
                                 <th>Total Failures</th>
                                 <th>Vendor</th>
                                 <th>CQX Cluster</th>
-                                <th id="districtHeader" style="display: none;">District</th>
                                 <th>Severity</th>
                             </tr>
                         </thead>
@@ -651,6 +671,7 @@
         let allClusters = [];
         let submarketClusters = {};
         let currentSubmarketClusters = [];
+        let availableDistricts = [];
         let currentSort = { column: null, direction: 'asc' };
         let columnFilters = {};
         let showDistrict = false;
@@ -740,33 +761,98 @@
                 updateSelectedClusters();
             });
 
-            // Add submarket change listener for cascading filter and auto-refresh
+            // Add submarket change listener for cascading filter
             document.getElementById('submarket').addEventListener('change', function () {
-                handleSubmarketChange(this.value);
-                // Store the pending submarket but don't update district visibility yet
-                pendingSubmarket = this.value;
+                const selectedSubmarket = this.value;
+                handleSubmarketChange(selectedSubmarket);
+                pendingSubmarket = selectedSubmarket;
                 
-                // Automatically fetch new data when submarket changes
+                // Load districts for this submarket
+                loadDistrictsForSubmarket(selectedSubmarket);
+                
+                // Enable/disable district dropdown
+                const districtDropdown = document.getElementById('district');
+                const districtBadge = document.getElementById('districtDependentBadge');
+                
+                if (selectedSubmarket) {
+                    districtDropdown.disabled = false;
+                    districtBadge.style.display = 'none';
+                    console.log('📍 District filter enabled for submarket:', selectedSubmarket);
+                } else {
+                    districtDropdown.disabled = true;
+                    districtDropdown.value = '';
+                    districtBadge.style.display = 'inline-block';
+                    populateDistrictDropdown([]);
+                    console.log('📍 District filter disabled - no submarket selected');
+                }
+                
+                // Auto-refresh data when submarket changes
                 console.log('🔄 Auto-refreshing data due to submarket change...');
                 fetchData();
             });
         }
 
+        // Load districts for selected submarket
+        async function loadDistrictsForSubmarket(submarket) {
+            const districtDropdown = document.getElementById('district');
+            
+            if (!submarket) {
+                populateDistrictDropdown([]);
+                return;
+            }
+            
+            // If API is available, fetch districts from the server
+            if (apiAvailable) {
+                try {
+                    const response = await fetch(`${API_URL}/districts?submarket=${encodeURIComponent(submarket)}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        availableDistricts = data.districts || [];
+                        console.log(`📍 Loaded ${availableDistricts.length} districts for ${submarket}`);
+                        populateDistrictDropdown(availableDistricts);
+                    } else {
+                        console.log('⚠️ Could not load districts from server');
+                        populateDistrictDropdown([]);
+                    }
+                } catch (error) {
+                    console.error('Error loading districts:', error);
+                    populateDistrictDropdown([]);
+                }
+            } else {
+                // Use sample districts for demo
+                const sampleDistricts = ['86A', '86B', '86C', '86D', '86E', '86F', '86G', '86H'];
+                availableDistricts = sampleDistricts;
+                populateDistrictDropdown(sampleDistricts);
+            }
+        }
+
+        // Populate district dropdown
+        function populateDistrictDropdown(districts) {
+            const dropdown = document.getElementById('district');
+            dropdown.innerHTML = '<option value="">All Districts</option>';
+            
+            if (districts && districts.length > 0) {
+                districts.forEach(district => {
+                    const option = document.createElement('option');
+                    option.value = district;
+                    option.textContent = district;
+                    dropdown.appendChild(option);
+                });
+            }
+        }
+
         // Update district column visibility
         function updateDistrictVisibility(submarket) {
-            const districtHeader = document.getElementById('districtHeader');
             const districtIndicator = document.getElementById('districtIndicator');
 
             if (submarket && submarket !== '') {
                 showDistrict = true;
-                districtHeader.style.display = '';
                 districtIndicator.style.display = 'inline-block';
-                console.log('📍 District column enabled for submarket:', submarket);
+                console.log('📍 District data enabled for submarket:', submarket);
             } else {
                 showDistrict = false;
-                districtHeader.style.display = 'none';
                 districtIndicator.style.display = 'none';
-                console.log('📍 District column hidden - no submarket selected');
+                console.log('📍 District data hidden - no submarket selected');
             }
         }
 
@@ -1077,6 +1163,7 @@
             const sortingCriteria = document.getElementById('sortingCriteria').value;
             const clusterValues = selectedClusters.length > 0 ? selectedClusters.join(',') : '';
             const submarket = document.getElementById('submarket').value;
+            const district = document.getElementById('district').value;
 
             // Update district visibility when Apply Filters is clicked
             updateDistrictVisibility(submarket);
@@ -1084,6 +1171,7 @@
 
             const filters = {
                 submarket: submarket,
+                district: district,
                 cqeClusters: clusterValues,
                 periodStart: document.getElementById('periodStart').value,
                 periodEnd: document.getElementById('periodEnd').value,
@@ -1095,6 +1183,7 @@
             console.log('🔄 Starting fetchData with filters:', filters);
             console.log('📊 Ranking criteria:', sortingCriteria);
             console.log('📍 Selected clusters:', selectedClusters);
+            console.log('📍 District filter:', district || 'All');
             console.log('📍 District data:', submarket ? 'Will be loaded' : 'Not applicable');
             showLoading();
 
@@ -1183,7 +1272,7 @@
             const metrics = ['V-CDR', 'NS/ESO', 'Quality RSRP', 'Quality RSRQ', 'V-ACC', 'V-ACC-E2E', 'D-ACC', 'DLTPUT', 'ULTPUT', 'D-RET', 'WIFI-RET'];
             const vendors = ['Nokia', 'Ericsson', 'Huawei', 'Samsung'];
             const clusters = ['CQE_EAST', 'CQE_WEST', 'CQE_CENTRAL', 'CQE_SOUTH', 'CQE_NORTH'];
-            const submarkets = ['NYC', 'LA', 'Chicago', 'Houston', 'Phoenix'];
+            const submarkets = ['NYC', 'LA', 'Chicago', 'Houston', 'Phoenix', 'Central Illinois'];
             const districts = ['86A', '86B', '86C', '86D', '86E', '86F', '86G', '86H'];
 
             // Sample submarket-cluster relationships for demo
@@ -1192,11 +1281,13 @@
                 'LA': ['CQE_WEST'],
                 'Chicago': ['CQE_CENTRAL', 'CQE_NORTH'],
                 'Houston': ['CQE_SOUTH', 'CQE_CENTRAL'],
-                'Phoenix': ['CQE_WEST', 'CQE_SOUTH']
+                'Phoenix': ['CQE_WEST', 'CQE_SOUTH'],
+                'Central Illinois': ['CQE_CENTRAL']
             };
 
             const selectedMetric = document.getElementById('metricName').value;
             const selectedSubmarket = document.getElementById('submarket').value;
+            const selectedDistrict = document.getElementById('district').value;
 
             // Filter clusters based on selection and submarket
             let availableClusters = clusters;
@@ -1210,6 +1301,23 @@
             if (!selectedMetric) {
                 for (let i = 0; i < 50; i++) {
                     const usid = `${10000 + i}`;
+                    
+                    // Assign district based on selection or randomly if no selection
+                    let assignedDistrict;
+                    if (selectedSubmarket) {
+                        if (selectedDistrict) {
+                            assignedDistrict = selectedDistrict;
+                        } else {
+                            assignedDistrict = districts[Math.floor(Math.random() * districts.length)];
+                        }
+                    } else {
+                        assignedDistrict = null;
+                    }
+                    
+                    // Skip this record if district filter is set and doesn't match
+                    if (selectedDistrict && assignedDistrict !== selectedDistrict) {
+                        continue;
+                    }
 
                     let avgFailures;
                     const rand = Math.random();
@@ -1244,7 +1352,7 @@
                         VENDOR: vendors[Math.floor(Math.random() * vendors.length)],
                         CQECLUSTER: filteredClusters[Math.floor(Math.random() * filteredClusters.length)],
                         SUBMKT: selectedSubmarket || submarkets[Math.floor(Math.random() * submarkets.length)],
-                        DISTRICT: selectedSubmarket ? districts[Math.floor(Math.random() * districts.length)] : null,
+                        DISTRICT: assignedDistrict,
                         EARLIEST_PERIOD: new Date(Date.now() - recordCount * 24 * 60 * 60 * 1000).toISOString(),
                         LATEST_PERIOD: new Date().toISOString()
                     });
@@ -1306,12 +1414,12 @@
 
             const indicator = document.getElementById('sortingIndicator');
             if (sortingCriteria === 'contribution') {
-                headers[3].style.backgroundColor = '#e0e7ff';
-                headers[3].style.fontWeight = '700';
-                indicator.textContent = '(by Contribution - Worst First)';
-            } else {
                 headers[4].style.backgroundColor = '#e0e7ff';
                 headers[4].style.fontWeight = '700';
+                indicator.textContent = '(by Contribution - Worst First)';
+            } else {
+                headers[5].style.backgroundColor = '#e0e7ff';
+                headers[5].style.fontWeight = '700';
                 indicator.textContent = '(by Total Failures - Highest First)';
             }
 
@@ -1384,23 +1492,20 @@
 
                 const totalFailuresCell = `<strong title="Total: ${formatFullNumber(validTotal)} failures">${formatCompactNumber(validTotal)}</strong>`;
 
-                // Handle district display
-                let districtCell = '';
-                if (showDistrict) {
-                    const district = row.DISTRICT || '-';
-                    const districtClass = district === '-' ? 'district-badge no-data' : 'district-badge';
-                    districtCell = `<td><span class="${districtClass}">${district}</span></td>`;
-                }
+                // Handle district display - now always visible in table
+                const district = row.DISTRICT || '-';
+                const districtClass = district === '-' ? 'district-badge no-data' : 'district-badge';
+                const districtCell = `<td><span class="${districtClass}">${district}</span></td>`;
 
                 tr.innerHTML = `
                     <td><strong>#${index + 1}</strong></td>
                     <td><a href="usid_detail.html?usid=${row.USID}" target="_blank" class="usid-link">${row.USID || '-'}</a></td>
+                    ${districtCell}
                     <td>${metricDisplay}</td>
                     <td>${contribCell}</td>
                     <td>${totalFailuresCell}</td>
                     <td>${row.VENDOR || '-'}</td>
                     <td>${row.CQECLUSTER || '-'}</td>
-                    ${districtCell}
                     <td><span class="${severityClass}" title="${Math.abs(percentageOfTotal).toFixed(2)}% of total">${severity}</span></td>
                 `;
                 tbody.appendChild(tr);
@@ -1622,16 +1727,9 @@
         // Initialize table headers with click handlers
         function initializeTableHeaders() {
             const headers = document.querySelectorAll('#dataTable th');
-            const columnMappings = showDistrict ?
-                ['rank', 'USID', 'METRIC_DISPLAY', 'IDXCONTR', 'TOTAL_EXTRAFAILURES', 'VENDOR', 'CQECLUSTER', 'DISTRICT', 'severity'] :
-                ['rank', 'USID', 'METRIC_DISPLAY', 'IDXCONTR', 'TOTAL_EXTRAFAILURES', 'VENDOR', 'CQECLUSTER', 'severity'];
+            const columnMappings = ['rank', 'USID', 'DISTRICT', 'METRIC_DISPLAY', 'IDXCONTR', 'TOTAL_EXTRAFAILURES', 'VENDOR', 'CQECLUSTER', 'severity'];
 
             headers.forEach((th, index) => {
-                // Skip if this is the hidden district header
-                if (!showDistrict && th.id === 'districtHeader') {
-                    return;
-                }
-
                 th.style.position = 'relative';
 
                 th.onclick = (e) => {
@@ -1684,6 +1782,8 @@
 
         function resetFilters() {
             document.getElementById('submarket').value = '';
+            document.getElementById('district').value = '';
+            document.getElementById('district').disabled = true;
 
             // Reset cascading filter
             currentSubmarketClusters = allClusters;
@@ -1737,6 +1837,7 @@
                 const exportRow = {
                     Rank: index + 1,
                     USID: row.USID || '',
+                    District: row.DISTRICT || '-',
                     MetricName: row.METRIC_DISPLAY || row.METRICNAME || '',
                     Contribution: contribution.toFixed(4),
                     TotalContribution: totalContribution.toFixed(4),
@@ -1746,11 +1847,6 @@
                     Cluster: row.CQECLUSTER || '',
                     Submarket: row.SUBMKT || ''
                 };
-
-                // Add district if showing
-                if (showDistrict) {
-                    exportRow.District = row.DISTRICT || '-';
-                }
 
                 exportRow.EarliestPeriod = row.EARLIEST_PERIOD || '';
                 exportRow.LatestPeriod = row.LATEST_PERIOD || '';

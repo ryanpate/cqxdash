@@ -432,11 +432,36 @@ def get_filter_options():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/districts', methods=['GET'])
+def get_districts():
+    """Get available districts for a given submarket"""
+    try:
+        submarket = request.args.get('submarket', '')
+        
+        if not submarket:
+            return jsonify({'districts': []})
+        
+        # Load district mapping from CSV file
+        district_mapping = load_district_mapping(submarket)
+        
+        # Get unique districts
+        districts = sorted(set(district_mapping.values())) if district_mapping else []
+        
+        logger.info(f"Returning {len(districts)} districts for submarket: {submarket}")
+        
+        return jsonify({'districts': districts})
+    
+    except Exception as e:
+        logger.error(f"Error fetching districts: {str(e)}")
+        return jsonify({'error': str(e), 'districts': []}), 500
+
+
 @app.route('/api/data', methods=['GET'])
 def get_cqi_data():
     """Get CQI data with district information when submarket is selected"""
     try:
         submarket = request.args.get('submarket', '')
+        district = request.args.get('district', '')
         cqe_clusters_str = request.args.get('cqeClusters', '')
         period_start = request.args.get('periodStart', '')
         period_end = request.args.get('periodEnd', '')
@@ -450,6 +475,7 @@ def get_cqi_data():
 
         logger.info(f"Data request with sorting: {sorting_criteria}")
         logger.info(f"Selected Submarket: {submarket}")
+        logger.info(f"Selected District: {district}")
         logger.info(f"Selected CQE Clusters: {cqe_clusters}")
 
         metric_mapping = {
@@ -538,6 +564,19 @@ def get_cqi_data():
         if usid:
             query += " AND USID = %s"
             params.append(usid)
+        
+        # Handle district filtering when both submarket and district are selected
+        if district and submarket:
+            district_mapping = load_district_mapping(submarket)
+            if district_mapping:
+                # Get USIDs that belong to the selected district
+                usids_in_district = [usid for usid, dist in district_mapping.items() if dist == district]
+                if usids_in_district:
+                    query += f" AND USID IN ({','.join(['%s'] * len(usids_in_district))})"
+                    params.extend(usids_in_district)
+                    logger.info(f"Filtering {len(usids_in_district)} USIDs for district: {district}")
+                else:
+                    logger.warning(f"No USIDs found for district: {district}")
 
         if aggregate_all_metrics:
             query += " GROUP BY USID"
@@ -841,7 +880,7 @@ if __name__ == '__main__':
         print("❌ Configuration incomplete. Please check environment variables.")
 
     print("\n📡 API will be available at: http://localhost:5000")
-    print("✨ Features: CSV-based Submarket-Cluster filtering + District mapping!")
+    print("✨ Features: CSV-based Submarket-Cluster filtering + District mapping + District filtering!")
     print("-" * 50)
 
     app.run(debug=False, host='0.0.0.0', port=5000)
