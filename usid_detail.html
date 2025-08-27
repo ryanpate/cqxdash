@@ -126,6 +126,17 @@
             box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
         }
 
+        .btn-success {
+            background: #48bb78;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #38a169;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(72, 187, 120, 0.3);
+        }
+
         .btn-secondary {
             background: #667eea;
             color: white;
@@ -136,17 +147,6 @@
             opacity: 1;
             transform: translateY(-2px);
             box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
-        }
-
-        .btn-success {
-            background: #48bb78;
-            color: white;
-        }
-
-        .btn-success:hover {
-            background: #38a169;
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(72, 187, 120, 0.3);
         }
 
         .btn-warning {
@@ -186,6 +186,7 @@
         .chart-container {
             position: relative;
             height: 450px;
+            margin-top: 20px;
         }
 
         .chart-container canvas {
@@ -399,8 +400,6 @@
                 <div style="display: flex; gap: 10px; align-items: flex-end;">
                     <button class="btn btn-back" onclick="goBack()">← Back to Dashboard</button>
                     <button class="btn btn-refresh" onclick="refreshData()">Refresh Data</button>
-                    <button class="btn btn-secondary" onclick="toggleLegend()" id="legendToggle"
-                        title="Toggle legend visibility (Press 'L')">Hide Legend</button>
                 </div>
             </div>
         </div>
@@ -639,19 +638,11 @@
         function updateChartWithActiveMetrics() {
             if (!chart) return;
 
-            // Update dataset visibility instead of removing/adding datasets
+            // Update dataset visibility
             chart.data.datasets.forEach((dataset, index) => {
                 const metric = dataset.label;
                 const isActive = activeMetrics.has(metric);
-
-                // Set dataset visibility
                 dataset.hidden = !isActive;
-
-                // Update legend item style through meta
-                const meta = chart.getDatasetMeta(index);
-                if (meta) {
-                    meta.hidden = !isActive;
-                }
             });
 
             // Update the chart
@@ -772,7 +763,7 @@
             const metricsToShow = metricFilter ? [metricFilter] : Array.from(allMetrics);
             createMetricBadges(metricsToShow);
 
-            // Prepare datasets for chart - include ALL metrics but mark as hidden based on active state
+            // Prepare datasets for chart
             const datasets = [];
 
             Object.keys(allChartData).forEach(metric => {
@@ -784,7 +775,7 @@
                 datasets.push({
                     label: metric,
                     data: data,
-                    hidden: !metricsToShow.includes(metric), // Initially all visible based on filter
+                    hidden: !metricsToShow.includes(metric),
                     borderColor: metricColors[metric] || `rgb(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255})`,
                     backgroundColor: 'transparent',
                     borderWidth: 2,
@@ -825,47 +816,7 @@
                             display: false
                         },
                         legend: {
-                            display: true,
-                            position: 'top',
-                            labels: {
-                                usePointStyle: true,
-                                padding: 15,
-                                font: {
-                                    size: 12
-                                },
-                                generateLabels: function (chart) {
-                                    const datasets = chart.data.datasets;
-                                    return datasets.map((dataset, i) => {
-                                        const meta = chart.getDatasetMeta(i);
-                                        const isActive = activeMetrics.has(dataset.label);
-
-                                        return {
-                                            text: dataset.label,
-                                            fillStyle: dataset.borderColor,
-                                            strokeStyle: dataset.borderColor,
-                                            lineWidth: dataset.borderWidth,
-                                            hidden: !isActive,
-                                            fontColor: isActive ? '#2d3748' : '#cbd5e0',
-                                            textDecoration: isActive ? '' : 'line-through',
-                                            index: i,
-                                            datasetIndex: i,
-                                            // Custom properties for Chart.js to use
-                                            pointStyle: 'circle'
-                                        };
-                                    });
-                                }
-                            },
-                            onClick: (e, legendItem, legend) => {
-                                e.stopPropagation();
-                                const index = legendItem.datasetIndex;
-                                const metric = legend.chart.data.datasets[index].label;
-
-                                // Use the same toggle logic as metric badges
-                                toggleMetric(metric);
-
-                                // Prevent default Chart.js legend click behavior
-                                return false;
-                            }
+                            display: false  // Hide the Chart.js legend completely
                         },
                         tooltip: {
                             mode: 'nearest',
@@ -1071,16 +1022,6 @@
             fetchUSIDData();
         }
 
-        function toggleLegend() {
-            if (chart) {
-                chart.options.plugins.legend.display = !chart.options.plugins.legend.display;
-                chart.update();
-
-                const btn = document.getElementById('legendToggle');
-                btn.textContent = chart.options.plugins.legend.display ? 'Hide Legend' : 'Show Legend';
-            }
-        }
-
         // Event listeners
         document.getElementById('metricFilter').addEventListener('change', () => {
             if (currentData.length > 0) {
@@ -1095,9 +1036,7 @@
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'l' || e.key === 'L') {
-                toggleLegend();
-            } else if (e.key === 'a' || e.key === 'A') {
+            if (e.key === 'a' || e.key === 'A') {
                 if (e.ctrlKey || e.metaKey) {
                     e.preventDefault();
                     showAllMetrics();
