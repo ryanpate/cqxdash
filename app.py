@@ -52,13 +52,16 @@ DISTRICT_CSV_DIR = '.'  # Current directory, can be changed to a specific folder
 
 # Handle authentication method
 if os.getenv('SNOWFLAKE_PRIVATE_KEY_PATH'):
-    SNOWFLAKE_CONFIG['private_key_file'] = os.getenv('SNOWFLAKE_PRIVATE_KEY_PATH')
+    SNOWFLAKE_CONFIG['private_key_file'] = os.getenv(
+        'SNOWFLAKE_PRIVATE_KEY_PATH')
     if os.getenv('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE'):
-        SNOWFLAKE_CONFIG['private_key_file_pwd'] = os.getenv('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE')
+        SNOWFLAKE_CONFIG['private_key_file_pwd'] = os.getenv(
+            'SNOWFLAKE_PRIVATE_KEY_PASSPHRASE')
 elif os.getenv('SNOWFLAKE_PASSWORD'):
     SNOWFLAKE_CONFIG['password'] = os.getenv('SNOWFLAKE_PASSWORD')
 else:
-    logger.warning("No authentication method configured. Set either SNOWFLAKE_PRIVATE_KEY_PATH or SNOWFLAKE_PASSWORD")
+    logger.warning(
+        "No authentication method configured. Set either SNOWFLAKE_PRIVATE_KEY_PATH or SNOWFLAKE_PASSWORD")
 
 
 def validate_config():
@@ -67,16 +70,19 @@ def validate_config():
     missing = [key for key in required if not SNOWFLAKE_CONFIG.get(key)]
 
     if missing:
-        logger.error(f"Missing required Snowflake configuration: {', '.join(missing)}")
+        logger.error(
+            f"Missing required Snowflake configuration: {', '.join(missing)}")
         logger.error("Please set the following environment variables:")
         for key in missing:
             logger.error(f"  SNOWFLAKE_{key.upper()}")
         return False
 
-    has_auth = ('private_key_file' in SNOWFLAKE_CONFIG or 'password' in SNOWFLAKE_CONFIG)
+    has_auth = (
+        'private_key_file' in SNOWFLAKE_CONFIG or 'password' in SNOWFLAKE_CONFIG)
     if not has_auth:
         logger.error("No authentication method configured.")
-        logger.error("Set either SNOWFLAKE_PRIVATE_KEY_PATH or SNOWFLAKE_PASSWORD")
+        logger.error(
+            "Set either SNOWFLAKE_PRIVATE_KEY_PATH or SNOWFLAKE_PASSWORD")
         return False
 
     return True
@@ -118,7 +124,8 @@ def load_submarket_cluster_mapping():
                         mapping[submarket] = []
                     mapping[submarket].append(cluster)
 
-        logger.info(f"Loaded mapping for {len(mapping)} submarkets from {MAPPING_CSV_PATH}")
+        logger.info(
+            f"Loaded mapping for {len(mapping)} submarkets from {MAPPING_CSV_PATH}")
 
     except Exception as e:
         logger.error(f"Error reading mapping CSV: {str(e)}")
@@ -131,16 +138,17 @@ def load_district_mapping(submarket):
     """Load district mapping for a specific submarket from CSV file"""
     if not submarket:
         return {}
-    
+
     # Create filename from submarket name
     district_file = os.path.join(DISTRICT_CSV_DIR, f"{submarket}.csv")
-    
+
     if not os.path.exists(district_file):
-        logger.info(f"District file not found for submarket '{submarket}': {district_file}")
+        logger.info(
+            f"District file not found for submarket '{submarket}': {district_file}")
         return {}
-    
+
     district_mapping = {}
-    
+
     try:
         with open(district_file, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
@@ -148,19 +156,22 @@ def load_district_mapping(submarket):
                 if len(row) >= 2:
                     # First column is USID (as integer), second is district
                     try:
-                        usid = str(row[0]).strip()  # Convert to string for consistency
+                        # Convert to string for consistency
+                        usid = str(row[0]).strip()
                         district = str(row[1]).strip()
                         district_mapping[usid] = district
                     except (ValueError, IndexError) as e:
-                        logger.warning(f"Skipping invalid row in {district_file}: {row}")
+                        logger.warning(
+                            f"Skipping invalid row in {district_file}: {row}")
                         continue
-        
-        logger.info(f"Loaded {len(district_mapping)} district mappings for submarket '{submarket}'")
-        
+
+        logger.info(
+            f"Loaded {len(district_mapping)} district mappings for submarket '{submarket}'")
+
     except Exception as e:
         logger.error(f"Error reading district file {district_file}: {str(e)}")
         return {}
-    
+
     return district_mapping
 
 
@@ -220,7 +231,8 @@ def clean_contribution_value(value):
 def get_snowflake_connection():
     """Create and return a Snowflake connection"""
     if not validate_config():
-        raise ValueError("Invalid Snowflake configuration. Check environment variables.")
+        raise ValueError(
+            "Invalid Snowflake configuration. Check environment variables.")
 
     try:
         conn = sc.connect(**SNOWFLAKE_CONFIG)
@@ -253,7 +265,8 @@ def test_connection():
         conn = get_snowflake_connection()
         cur = conn.cursor()
 
-        cur.execute("SELECT CURRENT_USER(), CURRENT_DATABASE(), CURRENT_SCHEMA()")
+        cur.execute(
+            "SELECT CURRENT_USER(), CURRENT_DATABASE(), CURRENT_SCHEMA()")
         context = cur.fetchone()
 
         cur.execute("""
@@ -327,10 +340,11 @@ def test_connection():
             'total_mappings': sum(len(clusters) for clusters in mapping.values()),
             'sample_mappings': dict(list(mapping.items())[:3]) if mapping else {}
         }
-        
+
         # Check for district CSV files
-        district_files = [f for f in os.listdir(DISTRICT_CSV_DIR) if f.endswith('.csv') and f != MAPPING_CSV_PATH]
-        
+        district_files = [f for f in os.listdir(
+            DISTRICT_CSV_DIR) if f.endswith('.csv') and f != MAPPING_CSV_PATH]
+
         response_data = {
             'connection': 'success',
             'user': context[0],
@@ -341,7 +355,8 @@ def test_connection():
             'recent_rows_2days': recent_count,
             'sample_data': sample_data,
             'csv_mapping': mapping_info,
-            'district_files_found': district_files[:5]  # Show first 5 district files found
+            # Show first 5 district files found
+            'district_files_found': district_files[:5]
         }
 
         if date_range:
@@ -410,17 +425,20 @@ def get_filter_options():
 
         if csv_mapping:
             filters['submarketClusters'] = csv_mapping
-            logger.info(f"CSV mapping loaded: {len(csv_mapping)} submarkets with cluster relationships")
+            logger.info(
+                f"CSV mapping loaded: {len(csv_mapping)} submarkets with cluster relationships")
 
             db_submarkets_set = set(db_submarkets)
             csv_submarkets = set(csv_mapping.keys())
             unmapped_submarkets = db_submarkets_set - csv_submarkets
 
             if unmapped_submarkets:
-                logger.info(f"Submarkets without CSV mapping (will show all clusters): {unmapped_submarkets}")
+                logger.info(
+                    f"Submarkets without CSV mapping (will show all clusters): {unmapped_submarkets}")
         else:
             filters['submarketClusters'] = {}
-            logger.info("No CSV mapping file found - all clusters will be available for all submarkets")
+            logger.info(
+                "No CSV mapping file found - all clusters will be available for all submarkets")
 
         filters['metricNames'] = list(metric_mapping.values())
         filters['metricMapping'] = metric_mapping
@@ -437,20 +455,22 @@ def get_districts():
     """Get available districts for a given submarket"""
     try:
         submarket = request.args.get('submarket', '')
-        
+
         if not submarket:
             return jsonify({'districts': []})
-        
+
         # Load district mapping from CSV file
         district_mapping = load_district_mapping(submarket)
-        
+
         # Get unique districts
-        districts = sorted(set(district_mapping.values())) if district_mapping else []
-        
-        logger.info(f"Returning {len(districts)} districts for submarket: {submarket}")
-        
+        districts = sorted(set(district_mapping.values())
+                           ) if district_mapping else []
+
+        logger.info(
+            f"Returning {len(districts)} districts for submarket: {submarket}")
+
         return jsonify({'districts': districts})
-    
+
     except Exception as e:
         logger.error(f"Error fetching districts: {str(e)}")
         return jsonify({'error': str(e), 'districts': []}), 500
@@ -461,7 +481,7 @@ def get_cqi_data():
     """Get CQI data with district information when submarket is selected"""
     try:
         submarket = request.args.get('submarket', '')
-        district = request.args.get('district', '')
+        district_str = request.args.get('district', '')
         cqe_clusters_str = request.args.get('cqeClusters', '')
         period_start = request.args.get('periodStart', '')
         period_end = request.args.get('periodEnd', '')
@@ -469,13 +489,20 @@ def get_cqi_data():
         usid = request.args.get('usid', '')
         sorting_criteria = request.args.get('sortingCriteria', 'contribution')
 
+        # Parse multiple districts
+        districts = []
+        if district_str:
+            districts = [d.strip()
+                         for d in district_str.split(',') if d.strip()]
+
         cqe_clusters = []
         if cqe_clusters_str:
-            cqe_clusters = [c.strip() for c in cqe_clusters_str.split(',') if c.strip()]
+            cqe_clusters = [c.strip()
+                            for c in cqe_clusters_str.split(',') if c.strip()]
 
         logger.info(f"Data request with sorting: {sorting_criteria}")
         logger.info(f"Selected Submarket: {submarket}")
-        logger.info(f"Selected District: {district}")
+        logger.info(f"Selected Districts: {districts}")
         logger.info(f"Selected CQE Clusters: {cqe_clusters}")
 
         metric_mapping = {
@@ -564,19 +591,22 @@ def get_cqi_data():
         if usid:
             query += " AND USID = %s"
             params.append(usid)
-        
-        # Handle district filtering when both submarket and district are selected
-        if district and submarket:
+
+        # Handle district filtering when both submarket and districts are selected
+        if districts and submarket:
             district_mapping = load_district_mapping(submarket)
             if district_mapping:
-                # Get USIDs that belong to the selected district
-                usids_in_district = [usid for usid, dist in district_mapping.items() if dist == district]
-                if usids_in_district:
-                    query += f" AND USID IN ({','.join(['%s'] * len(usids_in_district))})"
-                    params.extend(usids_in_district)
-                    logger.info(f"Filtering {len(usids_in_district)} USIDs for district: {district}")
+                # Get USIDs that belong to any of the selected districts
+                usids_in_districts = [
+                    usid for usid, dist in district_mapping.items() if dist in districts]
+                if usids_in_districts:
+                    query += f" AND USID IN ({','.join(['%s'] * len(usids_in_districts))})"
+                    params.extend(usids_in_districts)
+                    logger.info(
+                        f"Filtering {len(usids_in_districts)} USIDs for districts: {districts}")
                 else:
-                    logger.warning(f"No USIDs found for district: {district}")
+                    logger.warning(
+                        f"No USIDs found for districts: {districts}")
 
         if aggregate_all_metrics:
             query += " GROUP BY USID"
@@ -608,7 +638,8 @@ def get_cqi_data():
         district_mapping = {}
         if submarket:
             district_mapping = load_district_mapping(submarket)
-            logger.info(f"Loaded {len(district_mapping)} district mappings for submarket: {submarket}")
+            logger.info(
+                f"Loaded {len(district_mapping)} district mappings for submarket: {submarket}")
 
         result = []
         for row in data:
@@ -644,12 +675,13 @@ def get_cqi_data():
 
             record['EXTRAFAILURES'] = record.get('AVG_EXTRAFAILURES', 0)
             record['IDXCONTR'] = record.get('AVG_IDXCONTR', 0)
-            
+
             # Add district information if available
             if submarket and district_mapping:
                 usid_str = str(record.get('USID', ''))
                 record['DISTRICT'] = district_mapping.get(usid_str, '-')
-                logger.debug(f"USID {usid_str}: District = {record['DISTRICT']}")
+                logger.debug(
+                    f"USID {usid_str}: District = {record['DISTRICT']}")
             else:
                 record['DISTRICT'] = None
 
@@ -670,7 +702,8 @@ def get_summary_stats():
         cur = conn.cursor()
 
         end_date = datetime.now().strftime('%Y-%m-%d 23:59:59')
-        start_date = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d 00:00:00')
+        start_date = (datetime.now() - timedelta(days=2)
+                      ).strftime('%Y-%m-%d 00:00:00')
 
         metric_mapping = {
             'VOICE_CDR_RET_25': 'V-CDR',
@@ -857,13 +890,16 @@ if __name__ == '__main__':
         mapping = load_submarket_cluster_mapping()
         if mapping:
             print(f"📊 Loaded mappings for {len(mapping)} submarkets")
-            print(f"   Total cluster mappings: {sum(len(clusters) for clusters in mapping.values())}")
+            print(
+                f"   Total cluster mappings: {sum(len(clusters) for clusters in mapping.values())}")
     else:
-        print(f"⚠️  Mapping file not found. A sample file will be created at: {MAPPING_CSV_PATH}")
+        print(
+            f"⚠️  Mapping file not found. A sample file will be created at: {MAPPING_CSV_PATH}")
         print("   Please update it with your actual submarket-cluster mappings")
 
     # Check for district CSV files
-    district_files = [f for f in os.listdir(DISTRICT_CSV_DIR) if f.endswith('.csv') and f != MAPPING_CSV_PATH]
+    district_files = [f for f in os.listdir(
+        DISTRICT_CSV_DIR) if f.endswith('.csv') and f != MAPPING_CSV_PATH]
     if district_files:
         print(f"📊 Found {len(district_files)} district CSV files:")
         for f in district_files[:5]:
@@ -871,11 +907,13 @@ if __name__ == '__main__':
         if len(district_files) > 5:
             print(f"   ... and {len(district_files) - 5} more")
     else:
-        print("⚠️  No district CSV files found. Add {SUBMARKET}.csv files for district mapping")
+        print(
+            "⚠️  No district CSV files found. Add {SUBMARKET}.csv files for district mapping")
 
     if validate_config():
         print("✅ Configuration loaded from environment variables")
-        print(f"📊 Connecting to Snowflake as user: {SNOWFLAKE_CONFIG.get('user')}")
+        print(
+            f"📊 Connecting to Snowflake as user: {SNOWFLAKE_CONFIG.get('user')}")
     else:
         print("❌ Configuration incomplete. Please check environment variables.")
 
