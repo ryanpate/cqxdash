@@ -161,6 +161,80 @@
             margin-bottom: 30px;
         }
 
+        .overall-cqi-section {
+            background: linear-gradient(135deg, #f7fafc 0%, #ffffff 100%);
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            border: 2px solid #667eea;
+        }
+
+        .overall-cqi-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .overall-cqi-title {
+            color: #2d3748;
+            font-size: 1.8rem;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .cqi-badge {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 1rem;
+        }
+
+        .cqi-current-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #667eea;
+            margin: 20px 0;
+        }
+
+        .target-values {
+            display: flex;
+            gap: 30px;
+            margin-top: 15px;
+        }
+
+        .target-value-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .target-value-label {
+            font-weight: 600;
+            color: #4a5568;
+        }
+
+        .target-value-number {
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .target-value-number.green {
+            color: #48bb78;
+        }
+
+        .target-value-number.yellow {
+            color: #ed8936;
+        }
+
+        .target-value-number.yoy {
+            color: #9f7aea;
+        }
+
         .chart-header {
             margin-bottom: 20px;
             display: flex;
@@ -401,7 +475,8 @@
                 <span class="region-info" id="regionDisplay">Region: --</span>
             </div>
             <div class="info-note" style="margin-top: 20px;">
-                Track CQI metric performance against targets at the submarket level. View trends over time and compare against Green, Yellow, and Year-over-Year targets.
+                Track CQI metric performance against targets at the submarket level. View trends over time and compare
+                against Green, Yellow, and Year-over-Year targets.
             </div>
         </div>
 
@@ -448,24 +523,26 @@
             </div>
 
             <div class="comparison-toggle">
-                <span class="toggle-label">Show Target Lines:</span>
+                <span class="toggle-label">Show Yellow & YoY Targets:</span>
                 <div class="toggle-switch active" id="targetToggle">
                     <div class="toggle-slider"></div>
                 </div>
+                <span style="color: #48bb78; font-size: 0.85rem; margin-left: 10px;">✓ Green target always
+                    visible</span>
             </div>
 
             <div class="target-line-info" id="targetInfo">
                 <div class="target-indicator">
                     <div class="target-line green"></div>
-                    <span class="target-label">Green Target</span>
+                    <span class="target-label">Green Target (Always Shown)</span>
                 </div>
                 <div class="target-indicator">
                     <div class="target-line yellow"></div>
-                    <span class="target-label">Yellow Target</span>
+                    <span class="target-label">Yellow Target (Optional)</span>
                 </div>
                 <div class="target-indicator">
                     <div class="target-line yoy"></div>
-                    <span class="target-label">YoY Target</span>
+                    <span class="target-label">YoY Target (Optional)</span>
                 </div>
             </div>
 
@@ -473,6 +550,37 @@
                 <button class="btn btn-back" onclick="goBack()">← Back to Dashboard</button>
                 <button class="btn btn-primary" onclick="refreshData()">Apply Filters</button>
                 <button class="btn btn-success" onclick="exportChart()">Export Chart</button>
+            </div>
+        </div>
+
+        <!-- Overall CQI Score Section -->
+        <div class="overall-cqi-section">
+            <div class="overall-cqi-header">
+                <div class="overall-cqi-title">
+                    <span>📈 Overall CQI Score</span>
+                    <span class="cqi-badge">CQI2025</span>
+                </div>
+            </div>
+            <div class="chart-container" style="height: 300px;">
+                <canvas id="overallCqiChart"></canvas>
+            </div>
+            <div class="target-values">
+                <div class="target-value-item">
+                    <span class="target-value-label">Green Target:</span>
+                    <span class="target-value-number green" id="cqiGreenTarget">--</span>
+                </div>
+                <div class="target-value-item">
+                    <span class="target-value-label">Yellow Target:</span>
+                    <span class="target-value-number yellow" id="cqiYellowTarget">--</span>
+                </div>
+                <div class="target-value-item">
+                    <span class="target-value-label">YoY Target:</span>
+                    <span class="target-value-number yoy" id="cqiYoyTarget">--</span>
+                </div>
+                <div class="target-value-item">
+                    <span class="target-value-label">Latest CQI:</span>
+                    <span class="cqi-current-value" id="latestCqiValue">--</span>
+                </div>
             </div>
         </div>
 
@@ -531,32 +639,36 @@
     <script>
         const API_URL = 'http://cqxdashboard.web.att.com:5000/api';
         let chart = null;
+        let overallCqiChart = null;
         let currentData = [];
         let submarketHierarchy = {};
         let allMetrics = [];
         let activeMetrics = new Set();
         let showTargets = true;
+        let cqi2025Data = [];
 
         // Color palette for metrics
-        const metricColors = [
-            'rgb(255, 99, 132)',
-            'rgb(54, 162, 235)',
-            'rgb(255, 206, 86)',
-            'rgb(75, 192, 192)',
-            'rgb(153, 102, 255)',
-            'rgb(255, 159, 64)',
-            'rgb(199, 199, 199)',
-            'rgb(83, 102, 255)',
-            'rgb(255, 99, 255)',
-            'rgb(99, 255, 132)'
-        ];
+        const metricColors = {
+            'ALLRAT_DACC_25_CQI25': 'rgb(255, 99, 132)',
+            'ALLRAT_DDR_25_CQI25': 'rgb(54, 162, 235)',
+            'ALLRAT_DL_TPUT_25_CQI25': 'rgb(255, 206, 86)',
+            'ALLRAT_UL_TPUT_25_CQI25': 'rgb(75, 192, 192)',
+            'LTE_IQI_NS_ESO_25_CQI25': 'rgb(153, 102, 255)',
+            'LTE_IQI_QUALITY_25_CQI25': 'rgb(255, 159, 64)',
+            'LTE_IQI_RSRP_25_CQI25': 'rgb(199, 199, 199)',
+            'VOICE_CDR_RET_25_CQI25': 'rgb(83, 102, 255)',
+            'VOLTE_CDR_MOMT_ACC_25_CQI25': 'rgb(255, 99, 255)',
+            'VOLTE_RAN_ACBACC_25_ALL_CQI25': 'rgb(99, 255, 132)',
+            'CQI2025': 'rgb(102, 126, 234)',
+            'CQG2025': 'rgb(118, 75, 162)'
+        };
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function () {
             console.log('🚀 Market Level Dashboard initializing...');
             initializeControls();
             loadSubmarketHierarchy();
-            
+
             // Check if submarket passed in URL
             const urlParams = new URLSearchParams(window.location.search);
             const submarket = urlParams.get('submarket');
@@ -571,17 +683,17 @@
 
         function initializeControls() {
             // Region filter change
-            document.getElementById('regionFilter').addEventListener('change', function() {
+            document.getElementById('regionFilter').addEventListener('change', function () {
                 filterStatesByRegion(this.value);
             });
 
             // State filter change
-            document.getElementById('stateFilter').addEventListener('change', function() {
+            document.getElementById('stateFilter').addEventListener('change', function () {
                 filterSubmarketsByState(this.value);
             });
 
             // Submarket filter change
-            document.getElementById('submarketFilter').addEventListener('change', function() {
+            document.getElementById('submarketFilter').addEventListener('change', function () {
                 if (this.value) {
                     updateSubmarketDisplay(this.value);
                     fetchMarketData();
@@ -589,7 +701,7 @@
             });
 
             // Target toggle
-            document.getElementById('targetToggle').addEventListener('click', function() {
+            document.getElementById('targetToggle').addEventListener('click', function () {
                 this.classList.toggle('active');
                 showTargets = this.classList.contains('active');
                 document.getElementById('targetInfo').style.display = showTargets ? 'flex' : 'none';
@@ -599,7 +711,7 @@
             });
 
             // Chart type change
-            document.getElementById('chartType').addEventListener('change', function() {
+            document.getElementById('chartType').addEventListener('change', function () {
                 if (currentData.length > 0) {
                     updateChart(currentData);
                 }
@@ -709,7 +821,7 @@
             // Build hierarchy structure
             hierarchyData.forEach(line => {
                 const [region, state, submarket] = line.split(',');
-                
+
                 if (!submarketHierarchy[region]) {
                     submarketHierarchy[region] = {};
                 }
@@ -722,7 +834,7 @@
             // Populate all submarkets initially
             const submarketSelect = document.getElementById('submarketFilter');
             submarketSelect.innerHTML = '<option value="">Select Submarket</option>';
-            
+
             Object.keys(submarketHierarchy).forEach(region => {
                 Object.keys(submarketHierarchy[region]).forEach(state => {
                     submarketHierarchy[region][state].forEach(submarket => {
@@ -742,7 +854,7 @@
         function filterStatesByRegion(region) {
             const stateSelect = document.getElementById('stateFilter');
             stateSelect.innerHTML = '<option value="">All States/Areas</option>';
-            
+
             if (region && submarketHierarchy[region]) {
                 Object.keys(submarketHierarchy[region]).forEach(state => {
                     const option = document.createElement('option');
@@ -801,13 +913,13 @@
         function updateSubmarketDisplay(submarket) {
             const submarketDisplay = document.getElementById('submarketDisplay');
             const regionDisplay = document.getElementById('regionDisplay');
-            
+
             submarketDisplay.textContent = submarket;
-            
+
             // Find region and state for this submarket
             let foundRegion = '';
             let foundState = '';
-            
+
             Object.keys(submarketHierarchy).forEach(region => {
                 Object.keys(submarketHierarchy[region]).forEach(state => {
                     if (submarketHierarchy[region][state].includes(submarket)) {
@@ -816,7 +928,7 @@
                     }
                 });
             });
-            
+
             regionDisplay.textContent = `${foundRegion} - ${foundState}`;
         }
 
@@ -824,7 +936,7 @@
             const submarket = document.getElementById('submarketFilter').value;
             const metricFilter = document.getElementById('metricFilter').value;
             const weekRange = parseInt(document.getElementById('weekRange').value) || 12);
-            
+
             if (!submarket) {
                 showError('Please select a submarket');
                 return;
@@ -843,27 +955,34 @@
                 }
 
                 const response = await fetch(`${API_URL}/market-targets?${params}`);
-                
+
                 if (response.ok) {
                     const data = await response.json();
                     currentData = data;
-                    
-                    // Extract unique metrics
-                    allMetrics = [...new Set(data.map(d => d.CQI_METRICNAME || d.METRICNAME))];
+
+                    // Separate CQI2025 data from individual metrics
+                    cqi2025Data = data.filter(d => d.CQI_METRICNAME === 'CQI2025' || d.METRICNAME === 'CQI2025');
+                    const metricsData = data.filter(d => d.CQI_METRICNAME !== 'CQI2025' && d.CQI_METRICNAME !== 'CQG2025');
+
+                    // Extract unique metrics (excluding CQI2025 and CQG2025)
+                    allMetrics = [...new Set(metricsData.map(d => d.CQI_METRICNAME || d.METRICNAME))];
                     allMetrics.forEach(metric => activeMetrics.add(metric));
-                    
+
                     // Populate metric filter if not already done
                     populateMetricFilter();
-                    
+
                     // Create legend
                     createMetricLegend();
-                    
-                    // Update chart
-                    updateChart(data);
-                    
+
+                    // Update overall CQI chart
+                    updateOverallCqiChart(cqi2025Data);
+
+                    // Update individual metrics chart
+                    updateChart(metricsData);
+
                     // Update statistics
                     updateStatistics(data);
-                    
+
                     hideLoading();
                 } else {
                     throw new Error('Failed to fetch market data');
@@ -878,7 +997,7 @@
         function populateMetricFilter() {
             const select = document.getElementById('metricFilter');
             const currentValue = select.value;
-            
+
             if (select.options.length <= 1 && allMetrics.length > 0) {
                 select.innerHTML = '<option value="">All Metrics</option>';
                 allMetrics.sort().forEach(metric => {
@@ -891,23 +1010,181 @@
             }
         }
 
+        function updateOverallCqiChart(cqiData) {
+            if (!cqiData || cqiData.length === 0) return;
+
+            // Group data by week
+            const weekData = {};
+            const weeks = new Set();
+
+            cqiData.forEach(record => {
+                const week = record.WEEK;
+                weeks.add(week);
+
+                weekData[week] = {
+                    cqi_green: record.CQI_GREEN_TARGET,
+                    cqi_yellow: record.CQI_YELLOW_TARGET,
+                    cqi_yoy: record.CQI_YOY_TARGET
+                };
+            });
+
+            const sortedWeeks = Array.from(weeks).sort();
+
+            // Update target value displays
+            if (sortedWeeks.length > 0) {
+                const latestWeek = sortedWeeks[sortedWeeks.length - 1];
+                const latestData = weekData[latestWeek];
+
+                document.getElementById('cqiGreenTarget').textContent =
+                    latestData.cqi_green ? latestData.cqi_green.toFixed(2) : '--';
+                document.getElementById('cqiYellowTarget').textContent =
+                    latestData.cqi_yellow ? latestData.cqi_yellow.toFixed(2) : '--';
+                document.getElementById('cqiYoyTarget').textContent =
+                    latestData.cqi_yoy ? latestData.cqi_yoy.toFixed(2) : '--';
+                document.getElementById('latestCqiValue').textContent =
+                    latestData.cqi_green ? latestData.cqi_green.toFixed(2) : '--';
+            }
+
+            // Create datasets for overall CQI chart
+            const datasets = [
+                {
+                    label: 'CQI2025 Score',
+                    data: sortedWeeks.map(week => ({
+                        x: week,
+                        y: weekData[week] ? weekData[week].cqi_green : null
+                    })),
+                    borderColor: '#667eea',
+                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                    borderWidth: 3,
+                    tension: 0.4,
+                    fill: true,
+                    pointRadius: 5,
+                    pointHoverRadius: 8,
+                    pointBackgroundColor: '#667eea',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2
+                },
+                {
+                    label: 'Green Target',
+                    data: sortedWeeks.map(week => ({
+                        x: week,
+                        y: weekData[week] ? weekData[week].cqi_green : null
+                    })),
+                    borderColor: '#48bb78',
+                    borderDash: [10, 5],
+                    borderWidth: 2,
+                    fill: false,
+                    pointRadius: 0,
+                    type: 'line'
+                },
+                {
+                    label: 'Yellow Target',
+                    data: sortedWeeks.map(week => ({
+                        x: week,
+                        y: weekData[week] ? weekData[week].cqi_yellow : null
+                    })),
+                    borderColor: '#ed8936',
+                    borderDash: [5, 5],
+                    borderWidth: 1,
+                    fill: false,
+                    pointRadius: 0,
+                    type: 'line'
+                },
+                {
+                    label: 'YoY Target',
+                    data: sortedWeeks.map(week => ({
+                        x: week,
+                        y: weekData[week] ? weekData[week].cqi_yoy : null
+                    })),
+                    borderColor: '#9f7aea',
+                    borderDash: [10, 5],
+                    borderWidth: 1,
+                    fill: false,
+                    pointRadius: 0,
+                    type: 'line'
+                }
+            ];
+
+            // Create or update overall CQI chart
+            const ctx = document.getElementById('overallCqiChart').getContext('2d');
+
+            if (overallCqiChart) {
+                overallCqiChart.destroy();
+            }
+
+            overallCqiChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: sortedWeeks,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: false
+                        },
+                        legend: {
+                            display: true,
+                            position: 'bottom'
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: function (context) {
+                                    const label = context.dataset.label || '';
+                                    const value = context.parsed.y;
+                                    return `${label}: ${value ? value.toFixed(2) : 'N/A'}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: 'Week'
+                            }
+                        },
+                        y: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: 'CQI Score'
+                            },
+                            min: 85,
+                            max: 100
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
+                    }
+                }
+            });
+        }
+
         function createMetricLegend() {
             const legendGrid = document.getElementById('legendGrid');
             legendGrid.innerHTML = '';
-            
+
             allMetrics.forEach((metric, index) => {
                 const legendItem = document.createElement('div');
                 legendItem.className = 'legend-item';
                 legendItem.dataset.metric = metric;
                 legendItem.onclick = () => toggleMetric(metric);
-                
+
                 const color = document.createElement('div');
                 color.className = 'legend-color';
-                color.style.backgroundColor = metricColors[index % metricColors.length];
-                
+                color.style.backgroundColor = metricColors[metric] || `rgb(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255})`;
+
                 const label = document.createElement('span');
                 label.textContent = metric;
-                
+
                 legendItem.appendChild(color);
                 legendItem.appendChild(label);
                 legendGrid.appendChild(legendItem);
@@ -916,7 +1193,7 @@
 
         function toggleMetric(metric) {
             const legendItem = document.querySelector(`.legend-item[data-metric="${metric}"]`);
-            
+
             if (activeMetrics.has(metric)) {
                 activeMetrics.delete(metric);
                 legendItem.classList.add('inactive');
@@ -924,7 +1201,7 @@
                 activeMetrics.add(metric);
                 legendItem.classList.remove('inactive');
             }
-            
+
             updateChart(currentData);
         }
 
@@ -932,17 +1209,17 @@
             // Group data by week and metric
             const weekData = {};
             const weeks = new Set();
-            
+
             data.forEach(record => {
                 const week = record.WEEK;
                 const metric = record.CQI_METRICNAME || record.METRICNAME;
-                
+
                 if (!weekData[week]) {
                     weekData[week] = {};
                 }
-                
+
                 weeks.add(week);
-                
+
                 if (activeMetrics.has(metric)) {
                     weekData[week][metric] = {
                         cqi_green: record.CQI_GREEN_TARGET,
@@ -957,17 +1234,16 @@
 
             const sortedWeeks = Array.from(weeks).sort();
             const chartType = document.getElementById('chartType').value;
-            
+
             // Prepare datasets
             const datasets = [];
-            let metricIndex = 0;
-            
+
             activeMetrics.forEach(metric => {
-                const color = metricColors[metricIndex % metricColors.length];
-                
+                const color = metricColors[metric] || `rgb(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255})`;
+
                 // Main CQI data
                 datasets.push({
-                    label: `${metric} - CQI`,
+                    label: metric,
                     data: sortedWeeks.map(week => ({
                         x: week,
                         y: weekData[week] && weekData[week][metric] ? weekData[week][metric].cqi_green : null
@@ -978,9 +1254,28 @@
                     borderWidth: 2,
                     tension: 0.4
                 });
-                
-                // Add target lines if enabled
-                if (showTargets) {
+            });
+
+            // Always add green target line for each metric
+            activeMetrics.forEach(metric => {
+                datasets.push({
+                    label: `${metric} - Green Target`,
+                    data: sortedWeeks.map(week => ({
+                        x: week,
+                        y: weekData[week] && weekData[week][metric] ? weekData[week][metric].cqi_green : null
+                    })),
+                    borderColor: '#48bb78',
+                    borderDash: [10, 5],
+                    borderWidth: 2,
+                    type: 'line',
+                    fill: false,
+                    pointRadius: 0
+                });
+            });
+
+            // Add yellow and YoY targets if enabled
+            if (showTargets) {
+                activeMetrics.forEach(metric => {
                     // Yellow target
                     datasets.push({
                         label: `${metric} - Yellow Target`,
@@ -995,7 +1290,7 @@
                         fill: false,
                         pointRadius: 0
                     });
-                    
+
                     // YoY target
                     datasets.push({
                         label: `${metric} - YoY Target`,
@@ -1010,14 +1305,12 @@
                         fill: false,
                         pointRadius: 0
                     });
-                }
-                
-                metricIndex++;
-            });
+                });
+            }
 
             // Create or update chart
             const ctx = document.getElementById('marketChart').getContext('2d');
-            
+
             if (chart) {
                 chart.destroy();
             }
@@ -1042,7 +1335,7 @@
                             mode: 'index',
                             intersect: false,
                             callbacks: {
-                                label: function(context) {
+                                label: function (context) {
                                     const label = context.dataset.label || '';
                                     const value = context.parsed.y;
                                     return `${label}: ${value ? value.toFixed(2) : 'N/A'}`;
@@ -1085,23 +1378,23 @@
             // Get current week
             const weeks = [...new Set(data.map(d => d.WEEK))].sort();
             const currentWeek = weeks[weeks.length - 1] || '--';
-            
+
             // Count active metrics
             const metricCount = activeMetrics.size;
-            
+
             // Calculate average green target
             const greenTargets = data
                 .filter(d => activeMetrics.has(d.CQI_METRICNAME || d.METRICNAME))
                 .map(d => d.CQI_GREEN_TARGET)
                 .filter(t => t !== null && t !== undefined);
-            
-            const avgGreenTarget = greenTargets.length > 0 
+
+            const avgGreenTarget = greenTargets.length > 0
                 ? (greenTargets.reduce((a, b) => a + b, 0) / greenTargets.length).toFixed(2)
                 : '--';
-            
+
             // Count data points
             const dataPoints = data.filter(d => activeMetrics.has(d.CQI_METRICNAME || d.METRICNAME)).length;
-            
+
             // Update display
             document.getElementById('currentWeek').textContent = currentWeek;
             document.getElementById('metricCount').textContent = metricCount;
@@ -1111,37 +1404,57 @@
 
         function generateSampleData() {
             const sampleData = [];
-            const metrics = ['V-CDR', 'NS/ESO', 'DLTPUT', 'ULTPUT', 'D-ACC'];
+            const metrics = ['ALLRAT_DACC_25_CQI25', 'ALLRAT_DDR_25_CQI25', 'ALLRAT_DL_TPUT_25_CQI25',
+                'ALLRAT_UL_TPUT_25_CQI25', 'VOICE_CDR_RET_25_CQI25'];
             const weeks = [];
-            
+
             // Generate last 12 weeks
             for (let i = 11; i >= 0; i--) {
                 const weekNum = `2024W${String(52 - i).padStart(2, '0')}`;
                 weeks.push(weekNum);
             }
-            
+
+            // Add overall CQI2025 data
+            weeks.forEach(week => {
+                sampleData.push({
+                    WEEK: week,
+                    CQI_METRICNAME: 'CQI2025',
+                    CQI_GREEN_TARGET: 92 + Math.random() * 3,
+                    CQI_YELLOW_TARGET: 90 + Math.random() * 2,
+                    CQI_YOY_TARGET: 91 + Math.random() * 2,
+                    RAW_GREEN_TARGET: null,
+                    RAW_YELLOW_TARGET: null,
+                    RAW_YOY_TARGET: null
+                });
+            });
+
+            // Add individual metric data
             metrics.forEach(metric => {
                 weeks.forEach(week => {
                     sampleData.push({
                         WEEK: week,
                         CQI_METRICNAME: metric,
-                        CQI_GREEN_TARGET: 95 + Math.random() * 5,
-                        CQI_YELLOW_TARGET: 90 + Math.random() * 5,
-                        CQI_YOY_TARGET: 92 + Math.random() * 5,
-                        RAW_GREEN_TARGET: 0.95 + Math.random() * 0.05,
-                        RAW_YELLOW_TARGET: 0.90 + Math.random() * 0.05,
-                        RAW_YOY_TARGET: 0.92 + Math.random() * 0.05
+                        CQI_GREEN_TARGET: 88 + Math.random() * 7,
+                        CQI_YELLOW_TARGET: 85 + Math.random() * 5,
+                        CQI_YOY_TARGET: 86 + Math.random() * 6,
+                        RAW_GREEN_TARGET: 0.001 + Math.random() * 0.005,
+                        RAW_YELLOW_TARGET: 0.002 + Math.random() * 0.005,
+                        RAW_YOY_TARGET: 0.0015 + Math.random() * 0.005
                     });
                 });
             });
-            
+
             currentData = sampleData;
+            cqi2025Data = sampleData.filter(d => d.CQI_METRICNAME === 'CQI2025');
+            const metricsData = sampleData.filter(d => d.CQI_METRICNAME !== 'CQI2025');
+
             allMetrics = metrics;
             metrics.forEach(metric => activeMetrics.add(metric));
-            
+
             populateMetricFilter();
             createMetricLegend();
-            updateChart(sampleData);
+            updateOverallCqiChart(cqi2025Data);
+            updateChart(metricsData);
             updateStatistics(sampleData);
             hideLoading();
         }
