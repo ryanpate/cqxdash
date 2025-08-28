@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Market Level CQI Metrics</title>
+    <title>Market Level CQX Metrics</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * {
@@ -469,13 +469,13 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>Market Level CQI Performance</h1>
+            <h1>Market Level CQX Performance</h1>
             <div style="margin-top: 15px;">
                 <span class="submarket-badge" id="submarketDisplay">Loading...</span>
                 <span class="region-info" id="regionDisplay">Region: --</span>
             </div>
             <div class="info-note" style="margin-top: 20px;">
-                Track CQI metric performance against targets at the submarket level. View trends over time and compare
+                Track CQX metric performance against targets at the submarket level. View trends over time and compare
                 against Green, Yellow, and Year-over-Year targets.
             </div>
         </div>
@@ -553,11 +553,11 @@
             </div>
         </div>
 
-        <!-- Overall CQI Score Section -->
+        <!-- Overall CQX Score Section -->
         <div class="overall-cqi-section">
             <div class="overall-cqi-header">
                 <div class="overall-cqi-title">
-                    <span>📈 Overall CQI Score</span>
+                    <span>📈 Overall CQX Score</span>
                     <span class="cqi-badge">CQI2025</span>
                 </div>
             </div>
@@ -578,7 +578,7 @@
                     <span class="target-value-number yoy" id="cqiYoyTarget">--</span>
                 </div>
                 <div class="target-value-item">
-                    <span class="target-value-label">Latest CQI:</span>
+                    <span class="target-value-label">Latest CQX:</span>
                     <span class="cqi-current-value" id="latestCqiValue">--</span>
                 </div>
             </div>
@@ -586,7 +586,7 @@
 
         <div class="chart-section">
             <div class="chart-header">
-                <h2>CQI Performance Over Time</h2>
+                <h2>CQX Performance Over Time</h2>
                 <span style="color: #718096; font-size: 0.9rem;">Click metrics in legend to show/hide</span>
             </div>
 
@@ -935,7 +935,7 @@
         async function fetchMarketData() {
             const submarket = document.getElementById('submarketFilter').value;
             const metricFilter = document.getElementById('metricFilter').value;
-            const weekRange = parseInt(document.getElementById('weekRange').value) || 12);
+            const weekRange = parseInt(document.getElementById('weekRange').value) || 12;
 
             if (!submarket) {
                 showError('Please select a submarket');
@@ -960,25 +960,30 @@
                     const data = await response.json();
                     currentData = data;
 
-                    // Separate CQI2025 data from individual metrics
+                    // Separate CQI2025 data from all metrics (but keep all metrics available)
                     cqi2025Data = data.filter(d => d.CQI_METRICNAME === 'CQI2025' || d.METRICNAME === 'CQI2025');
-                    const metricsData = data.filter(d => d.CQI_METRICNAME !== 'CQI2025' && d.CQI_METRICNAME !== 'CQG2025');
 
-                    // Extract unique metrics (excluding CQI2025 and CQG2025)
-                    allMetrics = [...new Set(metricsData.map(d => d.CQI_METRICNAME || d.METRICNAME))];
-                    allMetrics.forEach(metric => activeMetrics.add(metric));
+                    // Extract ALL unique metrics (including CQI2025 and CQG2025 for selection)
+                    allMetrics = [...new Set(data.map(d => d.CQI_METRICNAME || d.METRICNAME))];
+
+                    // Only activate the first non-CQI2025/CQG2025 metric initially
+                    activeMetrics.clear();
+                    const firstMetric = allMetrics.find(m => m !== 'CQI2025' && m !== 'CQG2025');
+                    if (firstMetric) {
+                        activeMetrics.add(firstMetric);
+                    }
 
                     // Populate metric filter if not already done
                     populateMetricFilter();
 
-                    // Create legend
+                    // Create legend with all metrics
                     createMetricLegend();
 
                     // Update overall CQI chart
                     updateOverallCqiChart(cqi2025Data);
 
-                    // Update individual metrics chart
-                    updateChart(metricsData);
+                    // Update individual metrics chart (will show only the first metric initially)
+                    updateChart(data);
 
                     // Update statistics
                     updateStatistics(data);
@@ -1045,7 +1050,7 @@
                     latestData.cqi_green ? latestData.cqi_green.toFixed(2) : '--';
             }
 
-            // Create datasets for overall CQI chart
+            // Create datasets for overall CQX chart
             const datasets = [
                 {
                     label: 'CQI2025 Score',
@@ -1105,7 +1110,7 @@
                 }
             ];
 
-            // Create or update overall CQI chart
+            // Create or update overall CQX chart
             const ctx = document.getElementById('overallCqiChart').getContext('2d');
 
             if (overallCqiChart) {
@@ -1153,7 +1158,7 @@
                             display: true,
                             title: {
                                 display: true,
-                                text: 'CQI Score'
+                                text: 'CQX Score'
                             },
                             min: 85,
                             max: 100
@@ -1175,6 +1180,12 @@
             allMetrics.forEach((metric, index) => {
                 const legendItem = document.createElement('div');
                 legendItem.className = 'legend-item';
+
+                // Mark as inactive if not in activeMetrics
+                if (!activeMetrics.has(metric)) {
+                    legendItem.classList.add('inactive');
+                }
+
                 legendItem.dataset.metric = metric;
                 legendItem.onclick = () => toggleMetric(metric);
 
@@ -1355,7 +1366,7 @@
                             display: true,
                             title: {
                                 display: true,
-                                text: 'CQI Target Value'
+                                text: 'CQX Target Value'
                             }
                         }
                     },
@@ -1405,56 +1416,67 @@
         function generateSampleData() {
             const sampleData = [];
             const metrics = ['ALLRAT_DACC_25_CQI25', 'ALLRAT_DDR_25_CQI25', 'ALLRAT_DL_TPUT_25_CQI25',
-                'ALLRAT_UL_TPUT_25_CQI25', 'VOICE_CDR_RET_25_CQI25'];
+                'ALLRAT_UL_TPUT_25_CQI25', 'VOICE_CDR_RET_25_CQI25', 'LTE_IQI_NS_ESO_25_CQI25',
+                'LTE_IQI_QUALITY_25_CQI25', 'LTE_IQI_RSRP_25_CQI25', 'VOLTE_CDR_MOMT_ACC_25_CQI25',
+                'VOLTE_RAN_ACBACC_25_ALL_CQI25', 'CQI2025', 'CQG2025'];
             const weeks = [];
 
-            // Generate last 12 weeks
+            // Generate last 12 weeks for 2025
+            const currentWeek = 40; // Assuming we're in week 40 of 2025
             for (let i = 11; i >= 0; i--) {
-                const weekNum = `2024W${String(52 - i).padStart(2, '0')}`;
-                weeks.push(weekNum);
+                const weekNum = currentWeek - i;
+                const weekStr = `2025W${String(weekNum).padStart(2, '0')}`;
+                weeks.push(weekStr);
             }
 
-            // Add overall CQI2025 data
-            weeks.forEach(week => {
-                sampleData.push({
-                    WEEK: week,
-                    CQI_METRICNAME: 'CQI2025',
-                    CQI_GREEN_TARGET: 92 + Math.random() * 3,
-                    CQI_YELLOW_TARGET: 90 + Math.random() * 2,
-                    CQI_YOY_TARGET: 91 + Math.random() * 2,
-                    RAW_GREEN_TARGET: null,
-                    RAW_YELLOW_TARGET: null,
-                    RAW_YOY_TARGET: null
-                });
-            });
-
-            // Add individual metric data
+            // Add all metrics data including CQI2025 and CQG2025
             metrics.forEach(metric => {
                 weeks.forEach(week => {
+                    let greenTarget, yellowTarget, yoyTarget;
+
+                    if (metric === 'CQI2025') {
+                        greenTarget = 92 + Math.random() * 3;
+                        yellowTarget = 90 + Math.random() * 2;
+                        yoyTarget = 91 + Math.random() * 2;
+                    } else if (metric === 'CQG2025') {
+                        greenTarget = 91 + Math.random() * 3;
+                        yellowTarget = 89 + Math.random() * 2;
+                        yoyTarget = 90 + Math.random() * 2;
+                    } else {
+                        greenTarget = 88 + Math.random() * 7;
+                        yellowTarget = 85 + Math.random() * 5;
+                        yoyTarget = 86 + Math.random() * 6;
+                    }
+
                     sampleData.push({
                         WEEK: week,
                         CQI_METRICNAME: metric,
-                        CQI_GREEN_TARGET: 88 + Math.random() * 7,
-                        CQI_YELLOW_TARGET: 85 + Math.random() * 5,
-                        CQI_YOY_TARGET: 86 + Math.random() * 6,
-                        RAW_GREEN_TARGET: 0.001 + Math.random() * 0.005,
-                        RAW_YELLOW_TARGET: 0.002 + Math.random() * 0.005,
-                        RAW_YOY_TARGET: 0.0015 + Math.random() * 0.005
+                        CQI_GREEN_TARGET: greenTarget,
+                        CQI_YELLOW_TARGET: yellowTarget,
+                        CQI_YOY_TARGET: yoyTarget,
+                        RAW_GREEN_TARGET: metric.includes('CQI2025') || metric.includes('CQG2025') ? null : 0.001 + Math.random() * 0.005,
+                        RAW_YELLOW_TARGET: metric.includes('CQI2025') || metric.includes('CQG2025') ? null : 0.002 + Math.random() * 0.005,
+                        RAW_YOY_TARGET: metric.includes('CQI2025') || metric.includes('CQG2025') ? null : 0.0015 + Math.random() * 0.005
                     });
                 });
             });
 
             currentData = sampleData;
             cqi2025Data = sampleData.filter(d => d.CQI_METRICNAME === 'CQI2025');
-            const metricsData = sampleData.filter(d => d.CQI_METRICNAME !== 'CQI2025');
 
             allMetrics = metrics;
-            metrics.forEach(metric => activeMetrics.add(metric));
+
+            // Only activate first metric initially (not CQI2025 or CQG2025)
+            activeMetrics.clear();
+            const firstMetric = metrics.find(m => m !== 'CQI2025' && m !== 'CQG2025');
+            if (firstMetric) {
+                activeMetrics.add(firstMetric);
+            }
 
             populateMetricFilter();
             createMetricLegend();
             updateOverallCqiChart(cqi2025Data);
-            updateChart(metricsData);
+            updateChart(sampleData);
             updateStatistics(sampleData);
             hideLoading();
         }
