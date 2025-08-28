@@ -554,6 +554,7 @@
             </div>
             <div class="button-group">
                 <button class="btn btn-primary" onclick="fetchData()">Apply Filters</button>
+                <button class="btn btn-primary" onclick="openMarketGraph()">📊 View Market Level Graph</button>
                 <button class="btn btn-secondary" onclick="resetFilters()">Reset</button>
                 <button class="btn btn-secondary" onclick="exportData()">Export CSV</button>
             </div>
@@ -625,6 +626,18 @@
         let columnFilters = {};
         let showDistrict = false;
         let pendingSubmarket = null;
+
+        // Function for Market Level Graph
+        function openMarketGraph() {
+                const submarket = document.getElementById('submarket').value;
+                if (submarket) {
+                    // Open market graph with selected submarket
+                    window.open(`market_level.html?submarket=${encodeURIComponent(submarket)}`, '_blank');
+                } else {
+                    // Open market graph without pre-selection
+                    window.open('market_level.html', '_blank');
+                }
+            }
 
         // Utility functions for number formatting
         function formatCompactNumber(num) {
