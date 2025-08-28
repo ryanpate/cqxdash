@@ -559,6 +559,8 @@
                 <div class="overall-cqi-title">
                     <span>📈 Overall CQX Score</span>
                     <span class="cqi-badge">CQI2025</span>
+                    <span class="cqi-badge"
+                        style="background: linear-gradient(135deg, #48bb78 0%, #2f855a 100%);">CQG2025</span>
                 </div>
             </div>
             <div class="chart-container" style="height: 300px;">
@@ -566,7 +568,7 @@
             </div>
             <div class="target-values">
                 <div class="target-value-item">
-                    <span class="target-value-label">Green Target:</span>
+                    <span class="target-value-label">Green Target (CQG2025):</span>
                     <span class="target-value-number green" id="cqiGreenTarget">--</span>
                 </div>
                 <div class="target-value-item">
@@ -578,7 +580,7 @@
                     <span class="target-value-number yoy" id="cqiYoyTarget">--</span>
                 </div>
                 <div class="target-value-item">
-                    <span class="target-value-label">Latest CQX:</span>
+                    <span class="target-value-label">Latest CQX (CQI2025):</span>
                     <span class="cqi-current-value" id="latestCqiValue">--</span>
                 </div>
             </div>
@@ -960,8 +962,11 @@
                     const data = await response.json();
                     currentData = data;
 
-                    // Separate CQI2025 data from all metrics (but keep all metrics available)
-                    cqi2025Data = data.filter(d => d.CQI_METRICNAME === 'CQI2025' || d.METRICNAME === 'CQI2025');
+                    // Filter for CQI2025 and CQG2025 data for the overall chart
+                    cqi2025Data = data.filter(d =>
+                        d.CQI_METRICNAME === 'CQI2025' || d.METRICNAME === 'CQI2025' ||
+                        d.CQI_METRICNAME === 'CQG2025' || d.METRICNAME === 'CQG2025'
+                    );
 
                     // Extract ALL unique metrics (including CQI2025 and CQG2025 for selection)
                     allMetrics = [...new Set(data.map(d => d.CQI_METRICNAME || d.METRICNAME))];
@@ -979,7 +984,7 @@
                     // Create legend with all metrics
                     createMetricLegend();
 
-                    // Update overall CQI chart
+                    // Update overall CQX chart with both CQI2025 and CQG2025
                     updateOverallCqiChart(cqi2025Data);
 
                     // Update individual metrics chart (will show only the first metric initially)
@@ -1018,45 +1023,58 @@
         function updateOverallCqiChart(cqiData) {
             if (!cqiData || cqiData.length === 0) return;
 
-            // Group data by week
+            // Group data by week for both CQI2025 and CQG2025
             const weekData = {};
             const weeks = new Set();
 
-            cqiData.forEach(record => {
+            currentData.forEach(record => {
                 const week = record.WEEK;
-                weeks.add(week);
+                const metric = record.CQI_METRICNAME || record.METRICNAME;
 
-                weekData[week] = {
-                    cqi_green: record.CQI_GREEN_TARGET,
-                    cqi_yellow: record.CQI_YELLOW_TARGET,
-                    cqi_yoy: record.CQI_YOY_TARGET
-                };
+                if (metric === 'CQI2025' || metric === 'CQG2025') {
+                    weeks.add(week);
+
+                    if (!weekData[week]) {
+                        weekData[week] = {};
+                    }
+
+                    if (metric === 'CQI2025') {
+                        weekData[week].cqi2025_green = record.CQI_GREEN_TARGET;
+                        weekData[week].cqi2025_yellow = record.CQI_YELLOW_TARGET;
+                        weekData[week].cqi2025_yoy = record.CQI_YOY_TARGET;
+                    } else if (metric === 'CQG2025') {
+                        weekData[week].cqg2025_green = record.CQI_GREEN_TARGET;
+                        weekData[week].cqg2025_yellow = record.CQI_YELLOW_TARGET;
+                        weekData[week].cqg2025_yoy = record.CQI_YOY_TARGET;
+                    }
+                }
             });
 
             const sortedWeeks = Array.from(weeks).sort();
 
-            // Update target value displays
+            // Update target value displays with latest values
             if (sortedWeeks.length > 0) {
                 const latestWeek = sortedWeeks[sortedWeeks.length - 1];
                 const latestData = weekData[latestWeek];
 
+                // Display CQG2025 as Green Target, and CQI2025 values for yellow and YoY
                 document.getElementById('cqiGreenTarget').textContent =
-                    latestData.cqi_green ? latestData.cqi_green.toFixed(2) : '--';
+                    latestData.cqg2025_green ? latestData.cqg2025_green.toFixed(2) : '--';
                 document.getElementById('cqiYellowTarget').textContent =
-                    latestData.cqi_yellow ? latestData.cqi_yellow.toFixed(2) : '--';
+                    latestData.cqi2025_yellow ? latestData.cqi2025_yellow.toFixed(2) : '--';
                 document.getElementById('cqiYoyTarget').textContent =
-                    latestData.cqi_yoy ? latestData.cqi_yoy.toFixed(2) : '--';
+                    latestData.cqi2025_yoy ? latestData.cqi2025_yoy.toFixed(2) : '--';
                 document.getElementById('latestCqiValue').textContent =
-                    latestData.cqi_green ? latestData.cqi_green.toFixed(2) : '--';
+                    latestData.cqi2025_green ? latestData.cqi2025_green.toFixed(2) : '--';
             }
 
             // Create datasets for overall CQX chart
             const datasets = [
                 {
-                    label: 'CQI2025 Score',
+                    label: 'CQI2025 - Overall CQX Score',
                     data: sortedWeeks.map(week => ({
                         x: week,
-                        y: weekData[week] ? weekData[week].cqi_green : null
+                        y: weekData[week] ? weekData[week].cqi2025_green : null
                     })),
                     borderColor: '#667eea',
                     backgroundColor: 'rgba(102, 126, 234, 0.1)',
@@ -1070,23 +1088,24 @@
                     pointBorderWidth: 2
                 },
                 {
-                    label: 'Green Target',
+                    label: 'CQG2025 - Green Target',
                     data: sortedWeeks.map(week => ({
                         x: week,
-                        y: weekData[week] ? weekData[week].cqi_green : null
+                        y: weekData[week] ? weekData[week].cqg2025_green : null
                     })),
                     borderColor: '#48bb78',
                     borderDash: [10, 5],
                     borderWidth: 2,
                     fill: false,
-                    pointRadius: 0,
+                    pointRadius: 3,
+                    pointHoverRadius: 6,
                     type: 'line'
                 },
                 {
-                    label: 'Yellow Target',
+                    label: 'Yellow Target (CQI2025)',
                     data: sortedWeeks.map(week => ({
                         x: week,
-                        y: weekData[week] ? weekData[week].cqi_yellow : null
+                        y: weekData[week] ? weekData[week].cqi2025_yellow : null
                     })),
                     borderColor: '#ed8936',
                     borderDash: [5, 5],
@@ -1096,10 +1115,10 @@
                     type: 'line'
                 },
                 {
-                    label: 'YoY Target',
+                    label: 'YoY Target (CQI2025)',
                     data: sortedWeeks.map(week => ({
                         x: week,
-                        y: weekData[week] ? weekData[week].cqi_yoy : null
+                        y: weekData[week] ? weekData[week].cqi2025_yoy : null
                     })),
                     borderColor: '#9f7aea',
                     borderDash: [10, 5],
@@ -1462,7 +1481,8 @@
             });
 
             currentData = sampleData;
-            cqi2025Data = sampleData.filter(d => d.CQI_METRICNAME === 'CQI2025');
+            // Get both CQI2025 and CQG2025 for the overall chart
+            cqi2025Data = sampleData.filter(d => d.CQI_METRICNAME === 'CQI2025' || d.CQI_METRICNAME === 'CQG2025');
 
             allMetrics = metrics;
 
