@@ -527,22 +527,16 @@
                 <div class="toggle-switch active" id="targetToggle">
                     <div class="toggle-slider"></div>
                 </div>
-                <span style="color: #48bb78; font-size: 0.85rem; margin-left: 10px;">✓ Green target always
-                    visible</span>
             </div>
 
             <div class="target-line-info" id="targetInfo">
                 <div class="target-indicator">
-                    <div class="target-line green"></div>
-                    <span class="target-label">Green Target (Always Shown)</span>
-                </div>
-                <div class="target-indicator">
                     <div class="target-line yellow"></div>
-                    <span class="target-label">Yellow Target (Optional)</span>
+                    <span class="target-label">Yellow Target</span>
                 </div>
                 <div class="target-indicator">
                     <div class="target-line yoy"></div>
-                    <span class="target-label">YoY Target (Optional)</span>
+                    <span class="target-label">YoY Target</span>
                 </div>
             </div>
 
@@ -1286,24 +1280,7 @@
                 });
             });
 
-            // Always add green target line for each metric
-            activeMetrics.forEach(metric => {
-                datasets.push({
-                    label: `${metric} - Green Target`,
-                    data: sortedWeeks.map(week => ({
-                        x: week,
-                        y: weekData[week] && weekData[week][metric] ? weekData[week][metric].cqi_green : null
-                    })),
-                    borderColor: '#48bb78',
-                    borderDash: [10, 5],
-                    borderWidth: 2,
-                    type: 'line',
-                    fill: false,
-                    pointRadius: 0
-                });
-            });
-
-            // Add yellow and YoY targets if enabled
+            // Add yellow and YoY targets if enabled (removed green target)
             if (showTargets) {
                 activeMetrics.forEach(metric => {
                     // Yellow target
