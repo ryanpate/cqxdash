@@ -464,6 +464,7 @@
             font-size: 0.9rem;
         }
     </style>
+  <script src="api.js"></script>
 </head>
 
 <body>
@@ -633,7 +634,7 @@
     </div>
 
     <script>
-        const API_URL = 'http://cqxdashboard.web.att.com:5000/api';
+        // API_BASE centralized in api.js as API_BASE
         let chart = null;
         let overallCqiChart = null;
         let currentData = [];
@@ -950,7 +951,7 @@
                     params.append('metric', metricFilter);
                 }
 
-                const response = await fetch(`${API_URL}/market-targets?${params}`);
+                const response = await fetch(`${API_BASE}/market-targets?${params}`);
 
                 if (response.ok) {
                     const data = await response.json();
