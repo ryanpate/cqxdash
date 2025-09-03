@@ -473,7 +473,6 @@
             font-weight: 600;
         }
     </style>
-  <script src="api.js"></script>
 </head>
 
 <body>
@@ -611,7 +610,7 @@
 
     <script>
         // API endpoint
-        // API_BASE centralized in api.js as API_BASE
+        const API_URL = 'http://cqxdashboard.web.att.com:5000/api';
 
         let currentData = [];
         let displayData = [];  
@@ -803,7 +802,7 @@
             
             if (apiAvailable) {
                 try {
-                    const response = await fetch(`${API_BASE}/districts?submarket=${encodeURIComponent(submarket)}`);
+                    const response = await fetch(`${API_URL}/districts?submarket=${encodeURIComponent(submarket)}`);
                     if (response.ok) {
                         const data = await response.json();
                         availableDistricts = data.districts || [];
@@ -1109,7 +1108,7 @@
         async function checkAPIConnection() {
             try {
                 console.log('🔌 Checking API connection...');
-                const response = await fetch(`${API_BASE}/health`, {
+                const response = await fetch(`${API_URL}/health`, {
                     method: 'GET',
                     headers: {
                         'Content-Type': 'application/json'
@@ -1175,7 +1174,7 @@
         async function loadFilterOptions() {
             try {
                 console.log('📋 Loading filter options...');
-                const response = await fetch(`${API_BASE}/filters`);
+                const response = await fetch(`${API_URL}/filters`);
 
                 console.log('📋 Filters response status:', response.status);
 
@@ -1269,7 +1268,7 @@
 
             try {
                 const queryParams = new URLSearchParams(filters).toString();
-                const url = `${API_BASE}/data?${queryParams}`;
+                const url = `${API_URL}/data?${queryParams}`;
                 console.log('📡 Fetching data from:', url);
 
                 const startTime = performance.now();

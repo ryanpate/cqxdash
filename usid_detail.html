@@ -368,7 +368,6 @@
             font-size: 0.85rem;
         }
     </style>
-  <script src="api.js"></script>
 </head>
 
 <body>
@@ -459,7 +458,7 @@
     </div>
 
     <script>
-        // API_BASE centralized in api.js as API_BASE
+        const API_URL = 'http://cqxdashboard.web.att.com:5000/api';
         let chart = null;
         let currentData = [];
         let currentUSID = null;
@@ -683,7 +682,7 @@
                     params.append('metricName', metricFilter);
                 }
 
-                const response = await fetch(`${API_BASE}/usid-detail?${params}`);
+                const response = await fetch(`${API_URL}/usid-detail?${params}`);
 
                 if (response.ok) {
                     const data = await response.json();
