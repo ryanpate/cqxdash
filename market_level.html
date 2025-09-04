@@ -542,7 +542,7 @@
 
             <div class="button-group">
                 <button class="btn btn-back" onclick="goBack()">← Back to Dashboard</button>
-                <button class="btn btn-primary" onclick="refreshData()">Apply Filters</button>
+                <button class="btn btn-primary" onclick="applyFilters()">Apply Filters</button>
                 <button class="btn btn-success" onclick="exportChart()">Export Chart</button>
             </div>
         </div>
@@ -672,8 +672,12 @@
                 // Will be set after hierarchy loads
                 setTimeout(() => {
                     document.getElementById('submarketFilter').value = submarket;
+                    updateSubmarketDisplay(submarket);
                     fetchMarketData();
                 }, 1000);
+            } else {
+                // Show initial message to select a submarket
+                showError('Please select a submarket from the dropdown to view market level data');
             }
         });
 
@@ -934,7 +938,7 @@
             const weekRange = parseInt(document.getElementById('weekRange').value) || 12;
 
             if (!submarket) {
-                showError('Please select a submarket');
+                showError('Please select a submarket to view data');
                 return;
             }
 
@@ -952,49 +956,56 @@
 
                 const response = await fetch(`${API_URL}/market-targets?${params}`);
 
-                if (response.ok) {
-                    const data = await response.json();
-                    currentData = data;
-
-                    // Filter for CQI2025 and CQG2025 data for the overall chart
-                    cqi2025Data = data.filter(d =>
-                        d.CQI_METRICNAME === 'CQI2025' || d.METRICNAME === 'CQI2025' ||
-                        d.CQI_METRICNAME === 'CQG2025' || d.METRICNAME === 'CQG2025'
-                    );
-
-                    // Extract ALL unique metrics (including CQI2025 and CQG2025 for selection)
-                    allMetrics = [...new Set(data.map(d => d.CQI_METRICNAME || d.METRICNAME))];
-
-                    // Only activate the first non-CQI2025/CQG2025 metric initially
-                    activeMetrics.clear();
-                    const firstMetric = allMetrics.find(m => m !== 'CQI2025' && m !== 'CQG2025');
-                    if (firstMetric) {
-                        activeMetrics.add(firstMetric);
-                    }
-
-                    // Populate metric filter if not already done
-                    populateMetricFilter();
-
-                    // Create legend with all metrics
-                    createMetricLegend();
-
-                    // Update overall CQX chart with both CQI2025 and CQG2025
-                    updateOverallCqiChart(cqi2025Data);
-
-                    // Update individual metrics chart (will show only the first metric initially)
-                    updateChart(data);
-
-                    // Update statistics
-                    updateStatistics(data);
-
-                    hideLoading();
-                } else {
-                    throw new Error('Failed to fetch market data');
+                if (!response.ok) {
+                    throw new Error(`API returned status ${response.status}`);
                 }
+
+                const data = await response.json();
+
+                if (!data || data.length === 0) {
+                    showError('No data available for the selected submarket. Please try a different submarket or check if data exists in the database.');
+                    return;
+                }
+
+                currentData = data;
+
+                // Filter for CQI2025 and CQG2025 data for the overall chart
+                cqi2025Data = data.filter(d =>
+                    d.CQI_METRICNAME === 'CQI2025' || d.METRICNAME === 'CQI2025' ||
+                    d.CQI_METRICNAME === 'CQG2025' || d.METRICNAME === 'CQG2025'
+                );
+
+                // Extract ALL unique metrics (including CQI2025 and CQG2025 for selection)
+                allMetrics = [...new Set(data.map(d => d.CQI_METRICNAME || d.METRICNAME))];
+
+                // Only activate the first non-CQI2025/CQG2025 metric initially
+                activeMetrics.clear();
+                const firstMetric = allMetrics.find(m => m !== 'CQI2025' && m !== 'CQG2025');
+                if (firstMetric) {
+                    activeMetrics.add(firstMetric);
+                }
+
+                // Populate metric filter if not already done
+                populateMetricFilter();
+
+                // Create legend with all metrics
+                createMetricLegend();
+
+                // Update overall CQX chart with both CQI2025 and CQG2025
+                updateOverallCqiChart(cqi2025Data);
+
+                // Update individual metrics chart (will show only the first metric initially)
+                updateChart(data);
+
+                // Update statistics
+                updateStatistics(data);
+
+                hideLoading();
+
             } catch (error) {
                 console.error('Error fetching market data:', error);
-                showError('Failed to load data. Using sample data.');
-                generateSampleData();
+                showError(`Failed to load data: ${error.message}. Please check API connection and ensure Flask server is running.`);
+                hideLoading();
             }
         }
 
@@ -1409,73 +1420,22 @@
             document.getElementById('dataPoints').textContent = dataPoints;
         }
 
-        function generateSampleData() {
-            const sampleData = [];
-            const metrics = ['ALLRAT_DACC_25_CQI25', 'ALLRAT_DDR_25_CQI25', 'ALLRAT_DL_TPUT_25_CQI25',
-                'ALLRAT_UL_TPUT_25_CQI25', 'VOICE_CDR_RET_25_CQI25', 'LTE_IQI_NS_ESO_25_CQI25',
-                'LTE_IQI_QUALITY_25_CQI25', 'LTE_IQI_RSRP_25_CQI25', 'VOLTE_CDR_MOMT_ACC_25_CQI25',
-                'VOLTE_RAN_ACBACC_25_ALL_CQI25', 'CQI2025', 'CQG2025'];
-            const weeks = [];
+        function goBack() {
+            window.location.href = 'index.html';
+        }
 
-            // Generate last 12 weeks for 2025
-            const currentWeek = 40; // Assuming we're in week 40 of 2025
-            for (let i = 11; i >= 0; i--) {
-                const weekNum = currentWeek - i;
-                const weekStr = `2025W${String(weekNum).padStart(2, '0')}`;
-                weeks.push(weekStr);
+        function applyFilters() {
+            fetchMarketData();
+        }
+
+        function exportChart() {
+            if (chart) {
+                const url = chart.toBase64Image();
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `market_cqx_${document.getElementById('submarketFilter').value}_${new Date().toISOString().split('T')[0]}.png`;
+                a.click();
             }
-
-            // Add all metrics data including CQI2025 and CQG2025
-            metrics.forEach(metric => {
-                weeks.forEach(week => {
-                    let greenTarget, yellowTarget, yoyTarget;
-
-                    if (metric === 'CQI2025') {
-                        greenTarget = 92 + Math.random() * 3;
-                        yellowTarget = 90 + Math.random() * 2;
-                        yoyTarget = 91 + Math.random() * 2;
-                    } else if (metric === 'CQG2025') {
-                        greenTarget = 91 + Math.random() * 3;
-                        yellowTarget = 89 + Math.random() * 2;
-                        yoyTarget = 90 + Math.random() * 2;
-                    } else {
-                        greenTarget = 88 + Math.random() * 7;
-                        yellowTarget = 85 + Math.random() * 5;
-                        yoyTarget = 86 + Math.random() * 6;
-                    }
-
-                    sampleData.push({
-                        WEEK: week,
-                        CQI_METRICNAME: metric,
-                        CQI_GREEN_TARGET: greenTarget,
-                        CQI_YELLOW_TARGET: yellowTarget,
-                        CQI_YOY_TARGET: yoyTarget,
-                        RAW_GREEN_TARGET: metric.includes('CQI2025') || metric.includes('CQG2025') ? null : 0.001 + Math.random() * 0.005,
-                        RAW_YELLOW_TARGET: metric.includes('CQI2025') || metric.includes('CQG2025') ? null : 0.002 + Math.random() * 0.005,
-                        RAW_YOY_TARGET: metric.includes('CQI2025') || metric.includes('CQG2025') ? null : 0.0015 + Math.random() * 0.005
-                    });
-                });
-            });
-
-            currentData = sampleData;
-            // Get both CQI2025 and CQG2025 for the overall chart
-            cqi2025Data = sampleData.filter(d => d.CQI_METRICNAME === 'CQI2025' || d.CQI_METRICNAME === 'CQG2025');
-
-            allMetrics = metrics;
-
-            // Only activate first metric initially (not CQI2025 or CQG2025)
-            activeMetrics.clear();
-            const firstMetric = metrics.find(m => m !== 'CQI2025' && m !== 'CQG2025');
-            if (firstMetric) {
-                activeMetrics.add(firstMetric);
-            }
-
-            populateMetricFilter();
-            createMetricLegend();
-            updateOverallCqiChart(cqi2025Data);
-            updateChart(sampleData);
-            updateStatistics(sampleData);
-            hideLoading();
         }
 
         function showLoading() {
@@ -1494,25 +1454,24 @@
             document.getElementById('loadingDiv').style.display = 'none';
             document.getElementById('chartWrapper').style.display = 'none';
             document.getElementById('errorDiv').style.display = 'block';
-            document.getElementById('errorDiv').innerHTML = `<p>${message}</p>`;
-        }
-
-        function goBack() {
-            window.location.href = 'index.html';
-        }
-
-        function refreshData() {
-            fetchMarketData();
-        }
-
-        function exportChart() {
-            if (chart) {
-                const url = chart.toBase64Image();
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `market_cqi_${document.getElementById('submarketFilter').value}_${new Date().toISOString().split('T')[0]}.png`;
-                a.click();
-            }
+            document.getElementById('errorDiv').innerHTML = `
+                <div style="text-align: center; padding: 40px;">
+                    <div style="font-size: 3rem; margin-bottom: 20px;">⚠️</div>
+                    <h3 style="color: #c53030; margin-bottom: 15px;">No Data Available</h3>
+                    <p style="margin-bottom: 20px;">${message}</p>
+                    <div style="background: #fff5f5; border: 1px solid #feb2b2; border-radius: 8px; padding: 15px; margin-top: 20px; text-align: left; max-width: 600px; margin: 20px auto;">
+                        <strong>Troubleshooting Steps:</strong>
+                        <ol style="margin: 10px 0 0 20px;">
+                            <li>Ensure Flask API server is running: <code style="background: #f7fafc; padding: 2px 5px; border-radius: 3px;">python app.py</code></li>
+                            <li>Verify Snowflake credentials are configured properly</li>
+                            <li>Check that the CQI2025_TARGETS table exists and has data</li>
+                            <li>Confirm the selected submarket has data in the database</li>
+                            <li>Check network connectivity to the API server</li>
+                        </ol>
+                    </div>
+                    <button class="btn btn-primary" onclick="applyFilters()" style="margin-top: 20px;">🔄 Retry</button>
+                </div>
+            `;
         }
     </script>
 </body>
