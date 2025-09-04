@@ -1024,17 +1024,18 @@ def get_market_targets():
             query += " AND CQI_METRICNAME = %s"
             params.append(metric_filter)
 
-        # Add week range filter (get last N weeks)
+        # Fix: Use proper date arithmetic for WEEK column that contains dates
+        # Get data from the last N weeks
         query += """
-            AND WEEK >= (
-                SELECT DATEADD(WEEK, %s, CURRENT_DATE())
-            )
+            AND WEEK >= DATEADD(WEEK, %s, CURRENT_DATE())
+            AND WEEK <= CURRENT_DATE()
         """
         params.append(-week_range)
 
         query += " ORDER BY WEEK, CQI_METRICNAME"
 
         logger.info(f"Executing query with pattern: {reporting_key_pattern}")
+        logger.info(f"Week range: last {week_range} weeks from current date")
 
         conn = get_snowflake_connection()
         cur = conn.cursor()
@@ -1060,10 +1061,11 @@ def get_market_targets():
                            'CQI_GREEN_TARGET', 'CQI_YELLOW_TARGET', 'CQI_YOY_TARGET']:
                     record[col] = float(value) if value is not None else None
                 elif col == 'WEEK':
-                    # Convert week to string format
+                    # Convert date to string format (YYYY-MM-DD)
                     if value:
-                        if hasattr(value, 'isoformat'):
-                            record[col] = value.strftime('%Y-W%U')
+                        if hasattr(value, 'strftime'):
+                            # Keep as date format for better display
+                            record[col] = value.strftime('%Y-%m-%d')
                         else:
                             record[col] = str(value)
                     else:
