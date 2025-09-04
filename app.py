@@ -882,7 +882,7 @@ def internal_error(error):
 
 @app.route('/api/market-targets', methods=['GET'])
 def get_market_targets():
-    """Get CQI targets data for market level visualization"""
+    """Get CQX targets data for market level visualization"""
     try:
         submarket = request.args.get('submarket', '')
         metric_filter = request.args.get('metric', '')
@@ -891,7 +891,11 @@ def get_market_targets():
         if not submarket:
             return jsonify({'error': 'Submarket is required'}), 400
 
+        logger.info(
+            f"Fetching market targets for submarket: {submarket}, weeks: {week_range}")
+
         # Build the METRICREPORTINGKEY pattern for level 3 submarket
+        # Format: "East,Florida,Tampa" where Tampa is the submarket
         reporting_key_pattern = f"%,{submarket}"
 
         query = """
@@ -919,17 +923,18 @@ def get_market_targets():
             query += " AND CQI_METRICNAME = %s"
             params.append(metric_filter)
 
-        # Add week range filter (get last N weeks)
+        # Fix: Use proper date arithmetic for WEEK column that contains dates
+        # Get data from the last N weeks
         query += """
-            AND WEEK >= (
-                SELECT DATEADD(WEEK, -%s, MAX(WEEK))
-                FROM PRD_MOBILITY.PRD_MOBILITYSCORECARD_VIEWS.CQI2025_TARGETS
-                WHERE METRICREPORTINGLEVEL = 3
-            )
+            AND WEEK >= DATEADD(WEEK, %s, CURRENT_DATE())
+            AND WEEK <= CURRENT_DATE()
         """
-        params.append(week_range)
+        params.append(-week_range)
 
         query += " ORDER BY WEEK, CQI_METRICNAME"
+
+        logger.info(f"Executing query with pattern: {reporting_key_pattern}")
+        logger.info(f"Week range: last {week_range} weeks from current date")
 
         conn = get_snowflake_connection()
         cur = conn.cursor()
@@ -938,6 +943,8 @@ def get_market_targets():
 
         columns = [desc[0] for desc in cur.description]
         data = cur.fetchall()
+
+        logger.info(f"Retrieved {len(data)} rows from database")
 
         cur.close()
         conn.close()
@@ -953,10 +960,11 @@ def get_market_targets():
                            'CQI_GREEN_TARGET', 'CQI_YELLOW_TARGET', 'CQI_YOY_TARGET']:
                     record[col] = float(value) if value is not None else None
                 elif col == 'WEEK':
-                    # Convert week to string format
+                    # Convert date to string format (YYYY-MM-DD)
                     if value:
-                        if hasattr(value, 'isoformat'):
-                            record[col] = value.strftime('%Y-W%U')
+                        if hasattr(value, 'strftime'):
+                            # Keep as date format for better display
+                            record[col] = value.strftime('%Y-%m-%d')
                         else:
                             record[col] = str(value)
                     else:
@@ -974,12 +982,15 @@ def get_market_targets():
 
             result.append(record)
 
+        logger.info(
+            f"Returning {len(result)} records for submarket: {submarket}")
         return jsonify(result)
 
     except Exception as e:
         logger.error(f"Error fetching market targets: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
+        logger.error(f"Query pattern was: %,{submarket}")
+        return jsonify({'error': str(e), 'details': 'Check Flask console for more information'}), 500
+    
 if __name__ == '__main__':
     print("🚀 Starting CQI Dashboard API Server with District Support...")
     print(f"📄 Looking for mapping file: {MAPPING_CSV_PATH}")
