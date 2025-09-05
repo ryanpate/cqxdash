@@ -766,7 +766,7 @@ def get_summary_stats():
 
 @app.route('/api/usid-detail', methods=['GET'])
 def get_usid_detail():
-    """Get detailed metric data for a specific USID over time"""
+    """Get detailed metric data for a specific USID over time - includes both EXTRAFAILURES and IDXCONTR"""
     try:
         usid = request.args.get('usid', '')
         period_start = request.args.get('periodStart', '')
@@ -790,12 +790,14 @@ def get_usid_detail():
             'VOLTE_WIFI_CDR_25': 'WIFI-RET'
         }
 
+        # Updated query to include IDXCONTR
         query = """
             SELECT 
                 USID,
                 METRICNAME,
                 DATE(PERIODSTART) as DATE,
                 AVG(EXTRAFAILURES) as EXTRAFAILURES,
+                AVG(IDXCONTR) as IDXCONTR,
                 MAX(VENDOR) as VENDOR,
                 MAX(CQECLUSTER) as CQECLUSTER,
                 MAX(SUBMKT) as SUBMKT
@@ -845,6 +847,9 @@ def get_usid_detail():
 
                 if col == 'EXTRAFAILURES':
                     record[col] = clean_numeric_value(value)
+                elif col == 'IDXCONTR':
+                    # Use the contribution cleaning function that allows negative values
+                    record[col] = clean_contribution_value(value)
                 elif col == 'DATE':
                     if value:
                         if hasattr(value, 'isoformat'):
@@ -868,7 +873,6 @@ def get_usid_detail():
     except Exception as e:
         logger.error(f"Error fetching USID detail data: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
 
 @app.errorhandler(404)
 def not_found(error):
@@ -990,7 +994,8 @@ def get_market_targets():
         logger.error(f"Error fetching market targets: {str(e)}")
         logger.error(f"Query pattern was: %,{submarket}")
         return jsonify({'error': str(e), 'details': 'Check Flask console for more information'}), 500
-    
+
+
 if __name__ == '__main__':
     print("🚀 Starting CQI Dashboard API Server with District Support...")
     print(f"📄 Looking for mapping file: {MAPPING_CSV_PATH}")
