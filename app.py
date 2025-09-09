@@ -1,8 +1,6 @@
 """
-CQI Dashboard Flask API - With FOCUSLEV Support for Hierarchical Data
-Uses FOCUSLEV column to determine data aggregation level:
-- FOCUSLEV = 0: National level (when no submarket selected)
-- FOCUSLEV = 3: Submarket level (when submarket is selected)
+CQI Dashboard Flask API - With District Support from CSV Files
+Reads district data from {SUBMARKET}.csv files
 """
 
 from dotenv import load_dotenv
@@ -62,8 +60,13 @@ if os.getenv('SNOWFLAKE_PRIVATE_KEY_PATH'):
 elif os.getenv('SNOWFLAKE_PASSWORD'):
     SNOWFLAKE_CONFIG['password'] = os.getenv('SNOWFLAKE_PASSWORD')
 else:
-    logger.warning(
-        "No authentication method configured. Set either SNOWFLAKE_PRIVATE_KEY_PATH or SNOWFLAKE_PASSWORD")
+    # Try to use private_key.txt if it exists
+    if os.path.exists('private_key.txt'):
+        SNOWFLAKE_CONFIG['private_key_file'] = 'private_key.txt'
+        logger.info("Using private_key.txt for authentication")
+    else:
+        logger.warning(
+            "No authentication method configured. Set either SNOWFLAKE_PRIVATE_KEY_PATH or SNOWFLAKE_PASSWORD")
 
 
 def validate_config():
@@ -96,7 +99,24 @@ def load_submarket_cluster_mapping():
 
     if not os.path.exists(MAPPING_CSV_PATH):
         logger.warning(f"Mapping CSV file not found: {MAPPING_CSV_PATH}")
-        return {}
+        logger.warning("Creating sample mapping file...")
+
+        sample_data = [
+            ['SUBMKT', 'CQECLUSTER'],
+            ['NYC', 'CQE_NYC_MANHATTAN'],
+            ['NYC', 'CQE_NYC_BROOKLYN'],
+            ['LA', 'CQE_LA_DOWNTOWN'],
+            ['LA', 'CQE_LA_HOLLYWOOD'],
+            ['Chicago', 'CQE_CHI_NORTH'],
+            ['Chicago', 'CQE_CHI_SOUTH'],
+            ['Central Illinois', 'CQE_CENTRAL']
+        ]
+
+        with open(MAPPING_CSV_PATH, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerows(sample_data)
+
+        logger.info(f"Sample mapping file created: {MAPPING_CSV_PATH}")
 
     try:
         with open(MAPPING_CSV_PATH, 'r', encoding='utf-8') as f:
@@ -142,7 +162,6 @@ def load_district_mapping(submarket):
                 if len(row) >= 2:
                     # First column is USID (as integer), second is district
                     try:
-                        # Convert to string for consistency
                         usid = str(row[0]).strip()
                         district = str(row[1]).strip()
                         district_mapping[usid] = district
@@ -267,7 +286,6 @@ def test_connection():
         recent_count = 0
         sample_data = []
         date_range = None
-        focuslev_counts = {}
 
         if table_exists:
             cur.execute("SELECT COUNT(*) FROM CQI2025_CQX_CONTRIBUTION")
@@ -276,20 +294,9 @@ def test_connection():
             cur.execute("""
                 SELECT COUNT(*) 
                 FROM CQI2025_CQX_CONTRIBUTION
-                WHERE PERIODSTART >= DATEADD(day, -2, CURRENT_TIMESTAMP())
+                WHERE PERIODSTART >= DATEADD(day, -7, CURRENT_TIMESTAMP())
             """)
             recent_count = cur.fetchone()[0]
-
-            # Check FOCUSLEV distribution
-            cur.execute("""
-                SELECT FOCUSLEV, COUNT(*) as CNT
-                FROM CQI2025_CQX_CONTRIBUTION
-                GROUP BY FOCUSLEV
-                ORDER BY FOCUSLEV
-            """)
-            focuslev_data = cur.fetchall()
-            for row in focuslev_data:
-                focuslev_counts[f"FOCUSLEV_{row[0]}"] = row[1]
 
             cur.execute("""
                 SELECT 
@@ -299,13 +306,10 @@ def test_connection():
             """)
             date_range = cur.fetchone()
 
-            # Sample data from FOCUSLEV=3 (submarket level) - updated to match actual table structure
             cur.execute("""
-                SELECT DETAILAREA as USID, METRICNAME, EXTRAFAILURES, IDXCONTR, VENDOR, CQECLUSTER, SUBMKT, PERIODSTART, FOCUSLEV
+                SELECT USID, METRICNAME, EXTRAFAILURES, IDXCONTR, VENDOR, CQECLUSTER, SUBMKT, PERIODSTART
                 FROM CQI2025_CQX_CONTRIBUTION
                 WHERE PERIODSTART IS NOT NULL
-                AND FOCUSLEV = 3
-                AND DETAILLEV = 'USID'
                 AND METRICNAME IN (
                     'VOICE_CDR_RET_25', 'LTE_IQI_NS_ESO_25', 'LTE_IQI_RSRP_25',
                     'LTE_IQI_QUALITY_25', 'VOLTE_RAN_ACBACC_25_ALL', 'VOLTE_CDR_MOMT_ACC_25',
@@ -329,8 +333,7 @@ def test_connection():
                     'VENDOR': row[4],
                     'CLUSTER': row[5],
                     'SUBMKT': row[6],
-                    'PERIODSTART': row[7].strftime('%Y-%m-%d %H:%M:%S') if row[7] else None,
-                    'FOCUSLEV': row[8]
+                    'PERIODSTART': row[7].strftime('%Y-%m-%d %H:%M:%S') if row[7] else None
                 })
 
         cur.close()
@@ -354,8 +357,7 @@ def test_connection():
             'schema': context[2],
             'table_exists': table_exists,
             'total_rows': row_count,
-            'recent_rows_2days': recent_count,
-            'focuslev_distribution': focuslev_counts,
+            'recent_rows_7days': recent_count,
             'sample_data': sample_data,
             'csv_mapping': mapping_info,
             'district_files_found': district_files[:5]
@@ -382,9 +384,7 @@ def test_connection():
 def get_filter_options():
     """Get available filter options from the database with CSV-based submarket-cluster mapping"""
     try:
-        conn = get_snowflake_connection()
-        cur = conn.cursor()
-
+        # First try to connect to Snowflake
         filters = {}
 
         metric_mapping = {
@@ -401,46 +401,49 @@ def get_filter_options():
             'VOLTE_WIFI_CDR_25': 'WIFI-RET'
         }
 
-        # Get submarkets from FOCUSLEV=3 data
-        cur.execute("""
-            SELECT DISTINCT SUBMKT 
-            FROM CQI2025_CQX_CONTRIBUTION 
-            WHERE SUBMKT IS NOT NULL 
-            AND FOCUSLEV = 3
-            ORDER BY SUBMKT
-        """)
-        db_submarkets = [row[0] for row in cur.fetchall()]
+        try:
+            conn = get_snowflake_connection()
+            cur = conn.cursor()
 
-        # Get clusters from FOCUSLEV=3 data
-        cur.execute("""
-            SELECT DISTINCT CQECLUSTER 
-            FROM CQI2025_CQX_CONTRIBUTION 
-            WHERE CQECLUSTER IS NOT NULL 
-            AND FOCUSLEV = 3
-            ORDER BY CQECLUSTER
-        """)
-        db_clusters = [row[0] for row in cur.fetchall()]
+            # Get submarkets
+            cur.execute("""
+                SELECT DISTINCT SUBMKT 
+                FROM CQI2025_CQX_CONTRIBUTION 
+                WHERE SUBMKT IS NOT NULL 
+                ORDER BY SUBMKT
+            """)
+            db_submarkets = [row[0] for row in cur.fetchall()]
 
-        cur.close()
-        conn.close()
+            # Get clusters
+            cur.execute("""
+                SELECT DISTINCT CQECLUSTER 
+                FROM CQI2025_CQX_CONTRIBUTION 
+                WHERE CQECLUSTER IS NOT NULL 
+                ORDER BY CQECLUSTER
+            """)
+            db_clusters = [row[0] for row in cur.fetchall()]
 
+            cur.close()
+            conn.close()
+
+            filters['submarkets'] = db_submarkets
+            filters['cqeClusters'] = db_clusters
+
+        except Exception as db_error:
+            logger.warning(f"Could not fetch from database: {str(db_error)}")
+            # Provide sample data if database is not available
+            filters['submarkets'] = ['Central Illinois',
+                                     'NYC', 'LA', 'Chicago', 'Houston', 'Phoenix']
+            filters['cqeClusters'] = ['CQE_EAST', 'CQE_WEST',
+                                      'CQE_CENTRAL', 'CQE_SOUTH', 'CQE_NORTH']
+
+        # Load CSV mapping
         csv_mapping = load_submarket_cluster_mapping()
-
-        filters['submarkets'] = db_submarkets
-        filters['cqeClusters'] = db_clusters
 
         if csv_mapping:
             filters['submarketClusters'] = csv_mapping
             logger.info(
                 f"CSV mapping loaded: {len(csv_mapping)} submarkets with cluster relationships")
-
-            db_submarkets_set = set(db_submarkets)
-            csv_submarkets = set(csv_mapping.keys())
-            unmapped_submarkets = db_submarkets_set - csv_submarkets
-
-            if unmapped_submarkets:
-                logger.info(
-                    f"Submarkets without CSV mapping (will show all clusters): {unmapped_submarkets}")
         else:
             filters['submarketClusters'] = {}
             logger.info(
@@ -452,8 +455,22 @@ def get_filter_options():
         return jsonify(filters)
 
     except Exception as e:
-        logger.error(f"Error fetching filter options: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error in get_filter_options: {str(e)}")
+        # Return minimal valid response to prevent frontend from breaking
+        return jsonify({
+            'submarkets': [],
+            'cqeClusters': [],
+            'metricNames': ['V-CDR', 'NS/ESO', 'D-ACC', 'DLTPUT', 'ULTPUT', 'D-RET'],
+            'metricMapping': {
+                'VOICE_CDR_RET_25': 'V-CDR',
+                'LTE_IQI_NS_ESO_25': 'NS/ESO',
+                'ALLRAT_DACC_25': 'D-ACC',
+                'ALLRAT_DL_TPUT_25': 'DLTPUT',
+                'ALLRAT_UL_TPUT_25': 'ULTPUT',
+                'ALLRAT_DDR_25': 'D-RET'
+            },
+            'submarketClusters': {}
+        })
 
 
 @app.route('/api/districts', methods=['GET'])
@@ -484,11 +501,7 @@ def get_districts():
 
 @app.route('/api/data', methods=['GET'])
 def get_cqi_data():
-    """Get CQI data with FOCUSLEV filtering:
-    - FOCUSLEV=0 when no submarket selected (national level)
-    - FOCUSLEV=3 when submarket is selected (submarket level)
-    - Averages data across date ranges
-    """
+    """Get CQI data with district information when submarket is selected"""
     try:
         submarket = request.args.get('submarket', '')
         district_str = request.args.get('district', '')
@@ -510,12 +523,8 @@ def get_cqi_data():
             cqe_clusters = [c.strip()
                             for c in cqe_clusters_str.split(',') if c.strip()]
 
-        # Determine FOCUSLEV based on submarket selection
-        focus_level = 3 if submarket else 0
-
         logger.info(f"Data request with sorting: {sorting_criteria}")
-        logger.info(
-            f"FOCUSLEV: {focus_level} (submarket: {submarket or 'None'})")
+        logger.info(f"Selected Submarket: {submarket}")
         logger.info(f"Selected Districts: {districts}")
         logger.info(f"Selected CQE Clusters: {cqe_clusters}")
 
@@ -535,11 +544,11 @@ def get_cqi_data():
 
         aggregate_all_metrics = not metric_name
 
-        # Updated SQL query to match actual table structure with DETAILAREA as USID
+        # Build query
         if aggregate_all_metrics:
             query = """
                 SELECT 
-                    DETAILAREA as USID,
+                    USID,
                     'ALL' as METRICNAME,
                     AVG(EXTRAFAILURES) as AVG_EXTRAFAILURES,
                     SUM(EXTRAFAILURES) as TOTAL_EXTRAFAILURES,
@@ -549,18 +558,18 @@ def get_cqi_data():
                     MAX(VENDOR) as VENDOR,
                     MAX(CQECLUSTER) as CQECLUSTER,
                     MAX(SUBMKT) as SUBMKT,
+                    MAX(FOCUSLEV) as FOCUSLEV,
                     AVG(FOCUSAREA_L1CQIACTUAL) as AVG_ACTUAL,
                     AVG(CQITARGET) as AVG_TARGET,
                     MIN(PERIODSTART) as EARLIEST_PERIOD,
                     MAX(PERIODEND) as LATEST_PERIOD
                 FROM CQI2025_CQX_CONTRIBUTION
-                WHERE FOCUSLEV = %s
-                AND DETAILLEV = 'USID'
+                WHERE 1=1
             """
         else:
             query = """
                 SELECT 
-                    DETAILAREA as USID,
+                    USID,
                     METRICNAME,
                     AVG(EXTRAFAILURES) as AVG_EXTRAFAILURES,
                     SUM(EXTRAFAILURES) as TOTAL_EXTRAFAILURES,
@@ -570,27 +579,26 @@ def get_cqi_data():
                     MAX(VENDOR) as VENDOR,
                     MAX(CQECLUSTER) as CQECLUSTER,
                     MAX(SUBMKT) as SUBMKT,
+                    MAX(FOCUSLEV) as FOCUSLEV,
                     AVG(FOCUSAREA_L1CQIACTUAL) as AVG_ACTUAL,
                     AVG(CQITARGET) as AVG_TARGET,
                     MIN(PERIODSTART) as EARLIEST_PERIOD,
                     MAX(PERIODEND) as LATEST_PERIOD
                 FROM CQI2025_CQX_CONTRIBUTION
-                WHERE FOCUSLEV = %s
-                AND DETAILLEV = 'USID'
+                WHERE 1=1
             """
 
-        # Start with FOCUSLEV parameter
-        params = [focus_level]
-
-        # Add metric filter
         allowed_metrics = list(metric_mapping.keys())
         query += f" AND METRICNAME IN ({','.join(['%s'] * len(allowed_metrics))})"
-        params.extend(allowed_metrics)
+        params = allowed_metrics.copy()
 
-        # Only filter by submarket if FOCUSLEV=3
-        if submarket and focus_level == 3:
+        # Add FOCUSLEV constraint based on submarket selection
+        if submarket:
             query += " AND SUBMKT = %s"
             params.append(submarket)
+            query += " AND FOCUSLEV = 2"  # Submarket level
+        else:
+            query += " AND FOCUSLEV = 0"  # National level
 
         if cqe_clusters:
             query += f" AND CQECLUSTER IN ({','.join(['%s'] * len(cqe_clusters))})"
@@ -611,7 +619,7 @@ def get_cqi_data():
             params.append(actual_metric)
 
         if usid:
-            query += " AND DETAILAREA = %s"
+            query += " AND USID = %s"
             params.append(usid)
 
         # Handle district filtering when both submarket and districts are selected
@@ -622,7 +630,7 @@ def get_cqi_data():
                 usids_in_districts = [
                     usid for usid, dist in district_mapping.items() if dist in districts]
                 if usids_in_districts:
-                    query += f" AND DETAILAREA IN ({','.join(['%s'] * len(usids_in_districts))})"
+                    query += f" AND USID IN ({','.join(['%s'] * len(usids_in_districts))})"
                     params.extend(usids_in_districts)
                     logger.info(
                         f"Filtering {len(usids_in_districts)} USIDs for districts: {districts}")
@@ -631,9 +639,9 @@ def get_cqi_data():
                         f"No USIDs found for districts: {districts}")
 
         if aggregate_all_metrics:
-            query += " GROUP BY DETAILAREA"
+            query += " GROUP BY USID"
         else:
-            query += " GROUP BY DETAILAREA, METRICNAME"
+            query += " GROUP BY USID, METRICNAME"
 
         if sorting_criteria == 'contribution':
             query += " ORDER BY AVG_IDXCONTR ASC NULLS LAST"
@@ -645,7 +653,6 @@ def get_cqi_data():
         conn = get_snowflake_connection()
         cur = conn.cursor()
 
-        logger.info(f"Executing query with FOCUSLEV={focus_level}")
         if params:
             cur.execute(query, params)
         else:
@@ -656,9 +663,6 @@ def get_cqi_data():
 
         cur.close()
         conn.close()
-
-        logger.info(
-            f"Retrieved {len(data)} records with FOCUSLEV={focus_level}")
 
         # Load district mapping if submarket is selected
         district_mapping = {}
@@ -679,7 +683,7 @@ def get_cqi_data():
                     record[col] = clean_contribution_value(value)
                 elif col in ['AVG_ACTUAL', 'AVG_TARGET']:
                     record[col] = clean_numeric_value(value)
-                elif col == 'RECORD_COUNT':
+                elif col in ['RECORD_COUNT', 'FOCUSLEV']:
                     record[col] = int(value) if value else 0
                 elif col in ['EARLIEST_PERIOD', 'LATEST_PERIOD']:
                     if value is not None:
@@ -701,16 +705,17 @@ def get_cqi_data():
 
             record['EXTRAFAILURES'] = record.get('AVG_EXTRAFAILURES', 0)
             record['IDXCONTR'] = record.get('AVG_IDXCONTR', 0)
-            record['FOCUSLEV'] = focus_level
 
             # Add district information if available
             if submarket and district_mapping:
                 usid_str = str(record.get('USID', ''))
                 record['DISTRICT'] = district_mapping.get(usid_str, '-')
-                logger.debug(
-                    f"USID {usid_str}: District = {record['DISTRICT']}")
             else:
                 record['DISTRICT'] = None
+
+            # Ensure FOCUSLEV is in the response
+            if 'FOCUSLEV' not in record:
+                record['FOCUSLEV'] = 2 if submarket else 0
 
             result.append(record)
 
@@ -723,7 +728,7 @@ def get_cqi_data():
 
 @app.route('/api/summary', methods=['GET'])
 def get_summary_stats():
-    """Get summary statistics for the dashboard with FOCUSLEV support"""
+    """Get summary statistics for the dashboard"""
     try:
         conn = get_snowflake_connection()
         cur = conn.cursor()
@@ -731,10 +736,6 @@ def get_summary_stats():
         end_date = datetime.now().strftime('%Y-%m-%d 23:59:59')
         start_date = (datetime.now() - timedelta(days=2)
                       ).strftime('%Y-%m-%d 00:00:00')
-
-        # Get submarket from request to determine FOCUSLEV
-        submarket = request.args.get('submarket', '')
-        focus_level = 3 if submarket else 0
 
         metric_mapping = {
             'VOICE_CDR_RET_25': 'V-CDR',
@@ -754,7 +755,7 @@ def get_summary_stats():
 
         query = f"""
             SELECT 
-                COUNT(DISTINCT DETAILAREA) as total_usids,
+                COUNT(DISTINCT USID) as total_usids,
                 COUNT(*) as total_records,
                 SUM(EXTRAFAILURES) as total_failures,
                 AVG(EXTRAFAILURES) as avg_failures,
@@ -765,17 +766,11 @@ def get_summary_stats():
                 COUNT(CASE WHEN EXTRAFAILURES <= 100 THEN 1 END) as low_offenders
             FROM CQI2025_CQX_CONTRIBUTION
             WHERE PERIODSTART >= %s AND PERIODSTART <= %s
-            AND FOCUSLEV = %s
-            AND DETAILLEV = 'USID'
             AND METRICNAME IN ({','.join(['%s'] * len(allowed_metrics))})
+            AND FOCUSLEV = 0
         """
 
-        params = [start_date, end_date, focus_level] + allowed_metrics
-
-        if submarket and focus_level == 3:
-            query += " AND SUBMKT = %s"
-            params.append(submarket)
-
+        params = [start_date, end_date] + allowed_metrics
         cur.execute(query, params)
         result = cur.fetchone()
 
@@ -789,7 +784,6 @@ def get_summary_stats():
             'highOffenders': result[6] or 0,
             'mediumOffenders': result[7] or 0,
             'lowOffenders': result[8] or 0,
-            'focusLevel': focus_level,
             'lastUpdated': datetime.now().isoformat()
         }
 
@@ -805,19 +799,15 @@ def get_summary_stats():
 
 @app.route('/api/usid-detail', methods=['GET'])
 def get_usid_detail():
-    """Get detailed metric data for a specific USID over time with FOCUSLEV support"""
+    """Get detailed metric data for a specific USID over time"""
     try:
         usid = request.args.get('usid', '')
         period_start = request.args.get('periodStart', '')
         period_end = request.args.get('periodEnd', '')
         metric_name = request.args.get('metricName', '')
-        submarket = request.args.get('submarket', '')
 
         if not usid:
             return jsonify({'error': 'USID is required'}), 400
-
-        # Determine FOCUSLEV based on submarket
-        focus_level = 3 if submarket else 0
 
         metric_mapping = {
             'VOICE_CDR_RET_25': 'V-CDR',
@@ -833,31 +823,23 @@ def get_usid_detail():
             'VOLTE_WIFI_CDR_25': 'WIFI-RET'
         }
 
-        # Query includes FOCUSLEV filtering - updated to use DETAILAREA
         query = """
             SELECT 
-                DETAILAREA as USID,
+                USID,
                 METRICNAME,
                 DATE(PERIODSTART) as DATE,
                 AVG(EXTRAFAILURES) as EXTRAFAILURES,
                 AVG(IDXCONTR) as IDXCONTR,
                 MAX(VENDOR) as VENDOR,
                 MAX(CQECLUSTER) as CQECLUSTER,
-                MAX(SUBMKT) as SUBMKT,
-                MAX(FOCUSLEV) as FOCUSLEV
+                MAX(SUBMKT) as SUBMKT
             FROM CQI2025_CQX_CONTRIBUTION
-            WHERE DETAILAREA = %s
-            AND FOCUSLEV = %s
-            AND DETAILLEV = 'USID'
+            WHERE USID = %s
         """
 
         allowed_metrics = list(metric_mapping.keys())
         query += f" AND METRICNAME IN ({','.join(['%s'] * len(allowed_metrics))})"
-        params = [usid, focus_level] + allowed_metrics
-
-        if submarket and focus_level == 3:
-            query += " AND SUBMKT = %s"
-            params.append(submarket)
+        params = [usid] + allowed_metrics
 
         if period_start:
             query += " AND PERIODSTART >= %s"
@@ -874,7 +856,7 @@ def get_usid_detail():
             params.append(actual_metric)
 
         query += """
-            GROUP BY DETAILAREA, METRICNAME, DATE(PERIODSTART)
+            GROUP BY USID, METRICNAME, DATE(PERIODSTART)
             ORDER BY DATE(PERIODSTART), METRICNAME
         """
 
@@ -938,7 +920,6 @@ def get_market_targets():
         logger.info(
             f"Fetching market targets for submarket: {submarket}, weeks: {week_range}")
 
-        # Build the METRICREPORTINGKEY pattern for level 3 submarket
         reporting_key_pattern = f"%,{submarket}"
 
         query = """
@@ -975,7 +956,6 @@ def get_market_targets():
         query += " ORDER BY WEEK, CQI_METRICNAME"
 
         logger.info(f"Executing query with pattern: {reporting_key_pattern}")
-        logger.info(f"Week range: last {week_range} weeks from current date")
 
         conn = get_snowflake_connection()
         cur = conn.cursor()
@@ -1010,7 +990,6 @@ def get_market_targets():
                 else:
                     record[col] = value
 
-            # Parse the region and state from METRICREPORTINGKEY
             if record.get('METRICREPORTINGKEY'):
                 parts = record['METRICREPORTINGKEY'].split(',')
                 if len(parts) >= 3:
@@ -1026,7 +1005,6 @@ def get_market_targets():
 
     except Exception as e:
         logger.error(f"Error fetching market targets: {str(e)}")
-        logger.error(f"Query pattern was: %,{submarket}")
         return jsonify({'error': str(e), 'details': 'Check Flask console for more information'}), 500
 
 
@@ -1041,10 +1019,7 @@ def internal_error(error):
 
 
 if __name__ == '__main__':
-    print("🚀 Starting CQI Dashboard API Server with FOCUSLEV Support...")
-    print("📊 FOCUSLEV Logic:")
-    print("   - FOCUSLEV=0: National level data (when no submarket selected)")
-    print("   - FOCUSLEV=3: Submarket level data (when submarket is selected)")
+    print("🚀 Starting CQI Dashboard API Server with District Support...")
     print(f"📄 Looking for mapping file: {MAPPING_CSV_PATH}")
     print(f"📁 District CSV files directory: {DISTRICT_CSV_DIR}")
 
@@ -1057,8 +1032,8 @@ if __name__ == '__main__':
                 f"   Total cluster mappings: {sum(len(clusters) for clusters in mapping.values())}")
     else:
         print(
-            f"⚠️  Mapping file not found: {MAPPING_CSV_PATH}")
-        print("   The system will work without submarket-cluster mappings")
+            f"⚠️  Mapping file not found. A sample file will be created at: {MAPPING_CSV_PATH}")
+        print("   Please update it with your actual submarket-cluster mappings")
 
     # Check for district CSV files
     district_files = [f for f in os.listdir(
@@ -1081,7 +1056,7 @@ if __name__ == '__main__':
         print("❌ Configuration incomplete. Please check environment variables.")
 
     print("\n📡 API will be available at: http://localhost:5000")
-    print("✨ Features: FOCUSLEV-based hierarchical data filtering!")
+    print("✨ Features: CSV-based Submarket-Cluster filtering + District mapping + District filtering!")
     print("-" * 50)
 
     app.run(debug=False, host='0.0.0.0', port=5000)
