@@ -294,6 +294,25 @@
         .table-container table {
             width: 100%;
             border-collapse: collapse;
+            table-layout: auto;
+        }
+
+        .table-container tbody tr {
+            height: auto;
+            max-height: 50px;  /* Limit maximum height */
+        }
+
+        .table-container tbody td {
+            padding: 8px 12px;
+            border-bottom: 1px solid #e2e8f0;
+            color: #2d3748;
+            vertical-align: middle;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            height: auto;
+            line-height: 1.2;  /* Consistent line height */
+            max-height: 50px;  /* Match tr max-height */
         }
 
         th {
@@ -336,6 +355,9 @@
             text-decoration: none;
             cursor: pointer;
             transition: all 0.3s ease;
+            display: inline-block;
+            line-height: 1;
+            vertical-align: middle;
         }
 
         .usid-link:hover {
@@ -387,6 +409,7 @@
             border-radius: 4px;
             font-weight: 600;
             font-size: 0.85rem;
+            line-height: 1;
         }
 
         .loading {
@@ -1216,6 +1239,8 @@
             }
 
             function updateTable(data) {
+                console.log('First row data:', sortedData[0]);
+                console.log('District value:', sortedData[0]?.DISTRICT);
                 const tbody = document.getElementById('tableBody');
                 tbody.innerHTML = '';
 
@@ -1303,7 +1328,9 @@
 
                     const totalFailuresCell = `<strong title="Total: ${formatFullNumber(validTotal)} failures">${formatCompactNumber(validTotal)}</strong>`;
 
-                    const district = row.DISTRICT || '-';
+                    const district = (row.DISTRICT && row.DISTRICT !== 'null' && row.DISTRICT !== 'undefined')
+                        ? row.DISTRICT.trim()
+                        : '-';
 
                     tr.innerHTML = `
                     <td><strong>#${index + 1}</strong></td>
