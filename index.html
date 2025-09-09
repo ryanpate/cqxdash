@@ -296,20 +296,10 @@
             border-collapse: collapse;
         }
 
-        .table-container tbody tr {
-            line-height: 1.5;
-        }
-
-        .table-container tbody td {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
         th {
             background: #f7fafc;
             color: #4a5568;
-            padding: 12px;
+            padding: 10px 12px;
             text-align: left;
             font-weight: 600;
             text-transform: uppercase;
@@ -326,20 +316,26 @@
             background: #edf2f7;
         }
 
+        /* This is the key fix - remove all height constraints and use consistent padding */
         td {
-            padding: 8px 12px !important;
+            padding: 8px 12px;
             border-bottom: 1px solid #e2e8f0;
             color: #2d3748;
-            line-height: 1.2 !important;
             vertical-align: middle;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Remove these problematic rules if they exist */
+        .table-container tbody tr {
+            /* No height rules here */
         }
 
         td:first-child {
             font-weight: bold;
             color: #667eea;
-            max-width: 60px;
         }
-
         .usid-link {
             color: #667eea;
             text-decoration: none;
