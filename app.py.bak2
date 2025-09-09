@@ -1,8 +1,6 @@
 """
-CQI Dashboard Flask API - With FOCUSLEV Support for Hierarchical Data
-Uses FOCUSLEV column to determine data aggregation level:
-- FOCUSLEV = 0: National level (when no submarket selected)
-- FOCUSLEV = 3: Submarket level (when submarket is selected)
+CQI Dashboard Flask API - With District Support from CSV Files
+Reads district data from {SUBMARKET}.csv files
 """
 
 from dotenv import load_dotenv
@@ -283,7 +281,6 @@ def test_connection():
         recent_count = 0
         sample_data = []
         date_range = None
-        focuslev_counts = {}
 
         if table_exists:
             cur.execute("SELECT COUNT(*) FROM CQI2025_CQX_CONTRIBUTION")
@@ -296,17 +293,6 @@ def test_connection():
             """)
             recent_count = cur.fetchone()[0]
 
-            # Check FOCUSLEV distribution
-            cur.execute("""
-                SELECT FOCUSLEV, COUNT(*) as CNT
-                FROM CQI2025_CQX_CONTRIBUTION
-                GROUP BY FOCUSLEV
-                ORDER BY FOCUSLEV
-            """)
-            focuslev_data = cur.fetchall()
-            for row in focuslev_data:
-                focuslev_counts[f"FOCUSLEV_{row[0]}"] = row[1]
-
             cur.execute("""
                 SELECT 
                     MIN(PERIODSTART) as earliest,
@@ -315,19 +301,17 @@ def test_connection():
             """)
             date_range = cur.fetchone()
 
-            # Sample data from FOCUSLEV=3 (submarket level)
             cur.execute("""
-                SELECT USID, METRICNAME, EXTRAFAILURES, IDXCONTR, VENDOR, CQECLUSTER, SUBMKT, PERIODSTART, FOCUSLEV
+                SELECT USID, METRICNAME, EXTRAFAILURES, IDXCONTR, VENDOR, CQECLUSTER, SUBMKT, PERIODSTART
                 FROM CQI2025_CQX_CONTRIBUTION
                 WHERE PERIODSTART IS NOT NULL
-                AND FOCUSLEV = 3
                 AND METRICNAME IN (
                     'VOICE_CDR_RET_25', 'LTE_IQI_NS_ESO_25', 'LTE_IQI_RSRP_25',
                     'LTE_IQI_QUALITY_25', 'VOLTE_RAN_ACBACC_25_ALL', 'VOLTE_CDR_MOMT_ACC_25',
                     'ALLRAT_DACC_25', 'ALLRAT_DL_TPUT_25', 'ALLRAT_UL_TPUT_25',
                     'ALLRAT_DDR_25', 'VOLTE_WIFI_CDR_25'
                 )
-                ORDER BY IDXCONTR ASC NULLS LAST
+                ORDER BY IDXCONTR DESC NULLS LAST
                 LIMIT 5
             """)
             sample_rows = cur.fetchall()
@@ -344,8 +328,7 @@ def test_connection():
                     'VENDOR': row[4],
                     'CLUSTER': row[5],
                     'SUBMKT': row[6],
-                    'PERIODSTART': row[7].strftime('%Y-%m-%d %H:%M:%S') if row[7] else None,
-                    'FOCUSLEV': row[8]
+                    'PERIODSTART': row[7].strftime('%Y-%m-%d %H:%M:%S') if row[7] else None
                 })
 
         cur.close()
@@ -370,9 +353,9 @@ def test_connection():
             'table_exists': table_exists,
             'total_rows': row_count,
             'recent_rows_2days': recent_count,
-            'focuslev_distribution': focuslev_counts,
             'sample_data': sample_data,
             'csv_mapping': mapping_info,
+            # Show first 5 district files found
             'district_files_found': district_files[:5]
         }
 
@@ -416,22 +399,18 @@ def get_filter_options():
             'VOLTE_WIFI_CDR_25': 'WIFI-RET'
         }
 
-        # Get submarkets from FOCUSLEV=3 data
         cur.execute("""
             SELECT DISTINCT SUBMKT 
             FROM CQI2025_CQX_CONTRIBUTION 
             WHERE SUBMKT IS NOT NULL 
-            AND FOCUSLEV = 3
             ORDER BY SUBMKT
         """)
         db_submarkets = [row[0] for row in cur.fetchall()]
 
-        # Get clusters from FOCUSLEV=3 data
         cur.execute("""
             SELECT DISTINCT CQECLUSTER 
             FROM CQI2025_CQX_CONTRIBUTION 
             WHERE CQECLUSTER IS NOT NULL 
-            AND FOCUSLEV = 3
             ORDER BY CQECLUSTER
         """)
         db_clusters = [row[0] for row in cur.fetchall()]
@@ -499,11 +478,7 @@ def get_districts():
 
 @app.route('/api/data', methods=['GET'])
 def get_cqi_data():
-    """Get CQI data with FOCUSLEV filtering:
-    - FOCUSLEV=0 when no submarket selected (national level)
-    - FOCUSLEV=3 when submarket is selected (submarket level)
-    - Averages data across date ranges
-    """
+    """Get CQI data with district information when submarket is selected"""
     try:
         submarket = request.args.get('submarket', '')
         district_str = request.args.get('district', '')
@@ -525,11 +500,8 @@ def get_cqi_data():
             cqe_clusters = [c.strip()
                             for c in cqe_clusters_str.split(',') if c.strip()]
 
-        # Determine FOCUSLEV based on submarket selection
-        focus_level = 3 if submarket else 0
-
         logger.info(f"Data request with sorting: {sorting_criteria}")
-        logger.info(f"FOCUSLEV: {focus_level} (submarket: {submarket or 'None'})")
+        logger.info(f"Selected Submarket: {submarket}")
         logger.info(f"Selected Districts: {districts}")
         logger.info(f"Selected CQE Clusters: {cqe_clusters}")
 
@@ -567,7 +539,7 @@ def get_cqi_data():
                     MIN(PERIODSTART) as EARLIEST_PERIOD,
                     MAX(PERIODEND) as LATEST_PERIOD
                 FROM CQI2025_CQX_CONTRIBUTION
-                WHERE FOCUSLEV = %s
+                WHERE 1=1
             """
         else:
             query = """
@@ -587,19 +559,14 @@ def get_cqi_data():
                     MIN(PERIODSTART) as EARLIEST_PERIOD,
                     MAX(PERIODEND) as LATEST_PERIOD
                 FROM CQI2025_CQX_CONTRIBUTION
-                WHERE FOCUSLEV = %s
+                WHERE 1=1
             """
 
-        # Start with FOCUSLEV parameter
-        params = [focus_level]
-
-        # Add metric filter
         allowed_metrics = list(metric_mapping.keys())
         query += f" AND METRICNAME IN ({','.join(['%s'] * len(allowed_metrics))})"
-        params.extend(allowed_metrics)
+        params = allowed_metrics.copy()
 
-        # Only filter by submarket if FOCUSLEV=3
-        if submarket and focus_level == 3:
+        if submarket:
             query += " AND SUBMKT = %s"
             params.append(submarket)
 
@@ -656,7 +623,6 @@ def get_cqi_data():
         conn = get_snowflake_connection()
         cur = conn.cursor()
 
-        logger.info(f"Executing query with FOCUSLEV={focus_level}")
         if params:
             cur.execute(query, params)
         else:
@@ -667,8 +633,6 @@ def get_cqi_data():
 
         cur.close()
         conn.close()
-
-        logger.info(f"Retrieved {len(data)} records with FOCUSLEV={focus_level}")
 
         # Load district mapping if submarket is selected
         district_mapping = {}
@@ -711,7 +675,6 @@ def get_cqi_data():
 
             record['EXTRAFAILURES'] = record.get('AVG_EXTRAFAILURES', 0)
             record['IDXCONTR'] = record.get('AVG_IDXCONTR', 0)
-            record['FOCUSLEV'] = focus_level
 
             # Add district information if available
             if submarket and district_mapping:
@@ -733,7 +696,7 @@ def get_cqi_data():
 
 @app.route('/api/summary', methods=['GET'])
 def get_summary_stats():
-    """Get summary statistics for the dashboard with FOCUSLEV support"""
+    """Get summary statistics for the dashboard"""
     try:
         conn = get_snowflake_connection()
         cur = conn.cursor()
@@ -741,10 +704,6 @@ def get_summary_stats():
         end_date = datetime.now().strftime('%Y-%m-%d 23:59:59')
         start_date = (datetime.now() - timedelta(days=2)
                       ).strftime('%Y-%m-%d 00:00:00')
-
-        # Get submarket from request to determine FOCUSLEV
-        submarket = request.args.get('submarket', '')
-        focus_level = 3 if submarket else 0
 
         metric_mapping = {
             'VOICE_CDR_RET_25': 'V-CDR',
@@ -775,16 +734,10 @@ def get_summary_stats():
                 COUNT(CASE WHEN EXTRAFAILURES <= 100 THEN 1 END) as low_offenders
             FROM CQI2025_CQX_CONTRIBUTION
             WHERE PERIODSTART >= %s AND PERIODSTART <= %s
-            AND FOCUSLEV = %s
             AND METRICNAME IN ({','.join(['%s'] * len(allowed_metrics))})
         """
 
-        params = [start_date, end_date, focus_level] + allowed_metrics
-        
-        if submarket and focus_level == 3:
-            query += " AND SUBMKT = %s"
-            params.append(submarket)
-
+        params = [start_date, end_date] + allowed_metrics
         cur.execute(query, params)
         result = cur.fetchone()
 
@@ -798,7 +751,6 @@ def get_summary_stats():
             'highOffenders': result[6] or 0,
             'mediumOffenders': result[7] or 0,
             'lowOffenders': result[8] or 0,
-            'focusLevel': focus_level,
             'lastUpdated': datetime.now().isoformat()
         }
 
@@ -814,19 +766,15 @@ def get_summary_stats():
 
 @app.route('/api/usid-detail', methods=['GET'])
 def get_usid_detail():
-    """Get detailed metric data for a specific USID over time with FOCUSLEV support"""
+    """Get detailed metric data for a specific USID over time - includes both EXTRAFAILURES and IDXCONTR"""
     try:
         usid = request.args.get('usid', '')
         period_start = request.args.get('periodStart', '')
         period_end = request.args.get('periodEnd', '')
         metric_name = request.args.get('metricName', '')
-        submarket = request.args.get('submarket', '')
 
         if not usid:
             return jsonify({'error': 'USID is required'}), 400
-
-        # Determine FOCUSLEV based on submarket
-        focus_level = 3 if submarket else 0
 
         metric_mapping = {
             'VOICE_CDR_RET_25': 'V-CDR',
@@ -842,7 +790,7 @@ def get_usid_detail():
             'VOLTE_WIFI_CDR_25': 'WIFI-RET'
         }
 
-        # Query includes FOCUSLEV filtering
+        # Updated query to include IDXCONTR
         query = """
             SELECT 
                 USID,
@@ -852,20 +800,14 @@ def get_usid_detail():
                 AVG(IDXCONTR) as IDXCONTR,
                 MAX(VENDOR) as VENDOR,
                 MAX(CQECLUSTER) as CQECLUSTER,
-                MAX(SUBMKT) as SUBMKT,
-                MAX(FOCUSLEV) as FOCUSLEV
+                MAX(SUBMKT) as SUBMKT
             FROM CQI2025_CQX_CONTRIBUTION
             WHERE USID = %s
-            AND FOCUSLEV = %s
         """
 
         allowed_metrics = list(metric_mapping.keys())
         query += f" AND METRICNAME IN ({','.join(['%s'] * len(allowed_metrics))})"
-        params = [usid, focus_level] + allowed_metrics
-
-        if submarket and focus_level == 3:
-            query += " AND SUBMKT = %s"
-            params.append(submarket)
+        params = [usid] + allowed_metrics
 
         if period_start:
             query += " AND PERIODSTART >= %s"
@@ -906,6 +848,7 @@ def get_usid_detail():
                 if col == 'EXTRAFAILURES':
                     record[col] = clean_numeric_value(value)
                 elif col == 'IDXCONTR':
+                    # Use the contribution cleaning function that allows negative values
                     record[col] = clean_contribution_value(value)
                 elif col == 'DATE':
                     if value:
@@ -931,6 +874,15 @@ def get_usid_detail():
         logger.error(f"Error fetching USID detail data: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Endpoint not found'}), 404
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'error': 'Internal server error'}), 500
+
 
 @app.route('/api/market-targets', methods=['GET'])
 def get_market_targets():
@@ -947,6 +899,7 @@ def get_market_targets():
             f"Fetching market targets for submarket: {submarket}, weeks: {week_range}")
 
         # Build the METRICREPORTINGKEY pattern for level 3 submarket
+        # Format: "East,Florida,Tampa" where Tampa is the submarket
         reporting_key_pattern = f"%,{submarket}"
 
         query = """
@@ -974,6 +927,8 @@ def get_market_targets():
             query += " AND CQI_METRICNAME = %s"
             params.append(metric_filter)
 
+        # Fix: Use proper date arithmetic for WEEK column that contains dates
+        # Get data from the last N weeks
         query += """
             AND WEEK >= DATEADD(WEEK, %s, CURRENT_DATE())
             AND WEEK <= CURRENT_DATE()
@@ -1004,12 +959,15 @@ def get_market_targets():
             for i, col in enumerate(columns):
                 value = row[i]
 
+                # Handle different data types
                 if col in ['RAW_GREEN_TARGET', 'RAW_YELLOW_TARGET', 'RAW_YOY_TARGET',
                            'CQI_GREEN_TARGET', 'CQI_YELLOW_TARGET', 'CQI_YOY_TARGET']:
                     record[col] = float(value) if value is not None else None
                 elif col == 'WEEK':
+                    # Convert date to string format (YYYY-MM-DD)
                     if value:
                         if hasattr(value, 'strftime'):
+                            # Keep as date format for better display
                             record[col] = value.strftime('%Y-%m-%d')
                         else:
                             record[col] = str(value)
@@ -1038,21 +996,8 @@ def get_market_targets():
         return jsonify({'error': str(e), 'details': 'Check Flask console for more information'}), 500
 
 
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({'error': 'Endpoint not found'}), 404
-
-
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({'error': 'Internal server error'}), 500
-
-
 if __name__ == '__main__':
-    print("🚀 Starting CQI Dashboard API Server with FOCUSLEV Support...")
-    print("📊 FOCUSLEV Logic:")
-    print("   - FOCUSLEV=0: National level data (when no submarket selected)")
-    print("   - FOCUSLEV=3: Submarket level data (when submarket is selected)")
+    print("🚀 Starting CQI Dashboard API Server with District Support...")
     print(f"📄 Looking for mapping file: {MAPPING_CSV_PATH}")
     print(f"📁 District CSV files directory: {DISTRICT_CSV_DIR}")
 
@@ -1089,7 +1034,7 @@ if __name__ == '__main__':
         print("❌ Configuration incomplete. Please check environment variables.")
 
     print("\n📡 API will be available at: http://localhost:5000")
-    print("✨ Features: FOCUSLEV-based hierarchical data filtering + CSV-based mappings!")
+    print("✨ Features: CSV-based Submarket-Cluster filtering + District mapping + District filtering!")
     print("-" * 50)
 
     app.run(debug=False, host='0.0.0.0', port=5000)
