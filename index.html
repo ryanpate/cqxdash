@@ -316,7 +316,6 @@
             background: #edf2f7;
         }
 
-        /* This is the key fix - remove all height constraints and use consistent padding */
         td {
             padding: 8px 12px;
             border-bottom: 1px solid #e2e8f0;
@@ -327,15 +326,11 @@
             text-overflow: ellipsis;
         }
 
-        /* Remove these problematic rules if they exist */
-        .table-container tbody tr {
-            /* No height rules here */
-        }
-
         td:first-child {
             font-weight: bold;
             color: #667eea;
         }
+
         .usid-link {
             color: #667eea;
             text-decoration: none;
@@ -1309,24 +1304,22 @@
                     const totalFailuresCell = `<strong title="Total: ${formatFullNumber(validTotal)} failures">${formatCompactNumber(validTotal)}</strong>`;
 
                     const district = row.DISTRICT || '-';
-                    const districtClass = district === '-' ? 'district-badge no-data' : 'district-badge';
-                    const districtCell = `<td><span class="${districtClass}">${district}</span></td>`;
 
                     tr.innerHTML = `
-                        <td><strong>#${index + 1}</strong></td>
-                        <td><a href="usid_detail.html?usid=${row.USID}" target="_blank" class="usid-link">${row.USID || '-'}</a></td>
-                        <td><span class="${district === '-' ? 'district-badge no-data' : 'district-badge'}">${district}</span></td>
-                        <td>${metricDisplay}</td>
-                        <td>${contribCell}</td>
-                        <td>${totalFailuresCell}</td>
-                        <td>${row.CQECLUSTER || '-'}</td>
-                        <td><span class="${severityClass}" title="${Math.abs(percentageOfTotal).toFixed(2)}% of total">${severity}</span></td>
-                    `;                    
-                tbody.appendChild(tr);
+                    <td><strong>#${index + 1}</strong></td>
+                    <td><a href="usid_detail.html?usid=${row.USID}" target="_blank" class="usid-link">${row.USID || '-'}</a></td>
+                    <td><span class="${district === '-' ? 'district-badge no-data' : 'district-badge'}">${district}</span></td>
+                    <td>${metricDisplay}</td>
+                    <td>${contribCell}</td>
+                    <td>${totalFailuresCell}</td>
+                    <td>${row.CQECLUSTER || '-'}</td>
+                    <td><span class="${severityClass}" title="${Math.abs(percentageOfTotal).toFixed(2)}% of total">${severity}</span></td>
+                `;
+                    tbody.appendChild(tr);
                 });
             }
 
-            function resetFilters() {   
+            function resetFilters() {
                 document.getElementById('submarket').value = '';
 
                 selectedDistricts = [];
