@@ -43,25 +43,6 @@
             font-size: 1.1rem;
         }
 
-        .data-level-indicator {
-            display: inline-block;
-            background: linear-gradient(135deg, #48bb78 0%, #2f855a 100%);
-            color: white;
-            padding: 6px 14px;
-            border-radius: 20px;
-            font-weight: 600;
-            font-size: 0.9rem;
-            margin-left: 15px;
-        }
-
-        .data-level-indicator.national {
-            background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
-        }
-
-        .data-level-indicator.submarket {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
-
         .filters-section {
             background: white;
             border-radius: 15px;
@@ -491,6 +472,23 @@
             margin-left: 10px;
             font-weight: 600;
         }
+
+        .no-data-message {
+            text-align: center;
+            padding: 60px 20px;
+            color: #718096;
+        }
+
+        .no-data-message h3 {
+            color: #4a5568;
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+        }
+
+        .no-data-message p {
+            margin-bottom: 10px;
+            line-height: 1.6;
+        }
     </style>
 </head>
 
@@ -498,9 +496,7 @@
     <div class="container">
         <div class="header">
             <h1>CQX Offenders Dashboard - Extra Failures & Contribution Tracking</h1>
-            <p>Network failures and contribution aggregated by USID
-                <span id="dataLevelIndicator" class="data-level-indicator national">National Level (FOCUSLEV=0)</span>
-            </p>
+            <p>Network failures and contribution aggregated by USID</p>
         </div>
 
         <div class="filters-section">
@@ -515,7 +511,8 @@
                 <div class="filter-group">
                     <label for="district">District
                         <span id="districtCount" class="selected-count" style="display: none;">0</span>
-                        <span id="districtDependentBadge" class="filter-dependent" style="display: none;">Requires Submarket</span>
+                        <span id="districtDependentBadge" class="filter-dependent" style="display: none;">Requires
+                            Submarket</span>
                     </label>
                     <div class="multi-select-container">
                         <div class="multi-select-input disabled" id="districtInput">
@@ -592,11 +589,15 @@
             </div>
 
             <div class="info-note">
-                <strong>📊 Data Level Indicator:</strong> When no submarket is selected, data shows <strong>National Level (FOCUSLEV=0)</strong>. When a submarket is selected, data shows <strong>Submarket Level (FOCUSLEV=3)</strong>.<br><br>
-                <strong>🔄 Cascading Filters:</strong> When you select a Submarket, both the District and CQE Cluster dropdowns update automatically.<br>
-                <strong>📍 Multi-Select Districts:</strong> You can select multiple districts when a Submarket is chosen.<br>
+                <strong>📊 Data Levels:</strong> When no submarket is selected, data shows National Level aggregation.
+                When a submarket is selected, data shows Submarket Level details.<br><br>
+                <strong>🔄 Cascading Filters:</strong> When you select a Submarket, both the District and CQE Cluster
+                dropdowns update automatically.<br>
+                <strong>📍 Multi-Select Districts:</strong> You can select multiple districts when a Submarket is
+                chosen.<br>
                 <strong>📊 Multi-Select CQE Clusters:</strong> You can select multiple CQE Clusters to filter data.<br>
-                <strong>🔍 Quick USID Lookup:</strong> Enter a USID in the filter field and press Enter to open its detail page.<br>
+                <strong>🔍 Quick USID Lookup:</strong> Enter a USID in the filter field and press Enter to open its
+                detail page.<br>
                 <strong>Contribution Ranking:</strong> Smallest to largest (most negative/worst values first).<br>
                 <strong>Failures Ranking:</strong> Largest to smallest (highest failure counts first).
             </div>
@@ -625,6 +626,17 @@
                         </tbody>
                     </table>
                 </div>
+                <div id="noDataMessage" class="no-data-message" style="display: none;">
+                    <h3>No Data Available</h3>
+                    <p>No records found matching your current filter criteria.</p>
+                    <p>Try adjusting your filters:</p>
+                    <ul style="text-align: left; display: inline-block; margin-top: 10px;">
+                        <li>Expand the date range</li>
+                        <li>Select different submarkets or clusters</li>
+                        <li>Remove some filters to broaden the search</li>
+                        <li>Check if data exists for the selected time period</li>
+                    </ul>
+                </div>
             </div>
         </div>
     </div>
@@ -634,7 +646,7 @@
         const API_URL = 'http://cqxdashboard.web.att.com:5000/api';
 
         let currentData = [];
-        let displayData = [];  
+        let displayData = [];
         let apiAvailable = false;
         let metricMapping = {};
         let selectedClusters = [];
@@ -651,29 +663,14 @@
 
         // Function for Market Level Graph
         function openMarketGraph() {
-                const submarket = document.getElementById('submarket').value;
-                if (submarket) {
-                    // Open market graph with selected submarket
-                    window.open(`market_level.html?submarket=${encodeURIComponent(submarket)}`, '_blank');
-                } else {
-                    // Open market graph without pre-selection
-                    window.open('market_level.html', '_blank');
-                }
-            }
-
-        // Update data level indicator
-        function updateDataLevelIndicator(submarket) {
-            const indicator = document.getElementById('dataLevelIndicator');
+            const submarket = document.getElementById('submarket').value;
             if (submarket) {
-                currentFocusLevel = 3;
-                indicator.textContent = `Submarket Level: ${submarket} (FOCUSLEV=3)`;
-                indicator.className = 'data-level-indicator submarket';
+                // Open market graph with selected submarket
+                window.open(`market_level.html?submarket=${encodeURIComponent(submarket)}`, '_blank');
             } else {
-                currentFocusLevel = 0;
-                indicator.textContent = 'National Level (FOCUSLEV=0)';
-                indicator.className = 'data-level-indicator national';
+                // Open market graph without pre-selection
+                window.open('market_level.html', '_blank');
             }
-            console.log(`📊 Data Level Changed - FOCUSLEV=${currentFocusLevel}`);
         }
 
         // Utility functions for number formatting
@@ -732,7 +729,7 @@
         function initializeMultiSelect() {
             // Initialize CQE Cluster multi-select
             initializeClusterMultiSelect();
-            
+
             // Initialize District multi-select
             initializeDistrictMultiSelect();
 
@@ -741,18 +738,19 @@
                 const selectedSubmarket = this.value;
                 handleSubmarketChange(selectedSubmarket);
                 pendingSubmarket = selectedSubmarket;
-                
-                // Update data level indicator
-                updateDataLevelIndicator(selectedSubmarket);
-                
+
+                // Update focus level
+                currentFocusLevel = selectedSubmarket ? 3 : 0;
+                console.log(`📊 Data Level Changed - FOCUSLEV=${currentFocusLevel}`);
+
                 // Load districts for this submarket
                 loadDistrictsForSubmarket(selectedSubmarket);
-                
+
                 // Enable/disable district multi-select
                 const districtInput = document.getElementById('districtInput');
                 const districtText = document.getElementById('districtText');
                 const districtBadge = document.getElementById('districtDependentBadge');
-                
+
                 if (selectedSubmarket) {
                     districtInput.classList.remove('disabled');
                     districtText.textContent = 'All Districts';
@@ -766,7 +764,7 @@
                     updateSelectedDistricts();
                     console.log('📍 District filter disabled - no submarket selected');
                 }
-                
+
                 // Auto-refresh data when submarket changes
                 console.log(`🔄 Auto-refreshing data due to submarket change (FOCUSLEV=${selectedSubmarket ? 3 : 0})...`);
                 fetchData();
@@ -839,7 +837,7 @@
                 populateDistrictMultiSelect([]);
                 return;
             }
-            
+
             if (apiAvailable) {
                 try {
                     const response = await fetch(`${API_URL}/districts?submarket=${encodeURIComponent(submarket)}`);
@@ -856,26 +854,21 @@
                     console.error('Error loading districts:', error);
                     populateDistrictMultiSelect([]);
                 }
-            } else {
-                // Use sample districts for demo
-                const sampleDistricts = ['86A', '86B', '86C', '86D', '86E', '86F', '86G', '86H'];
-                availableDistricts = sampleDistricts;
-                populateDistrictMultiSelect(sampleDistricts);
             }
         }
 
         // Populate district multi-select dropdown
         function populateDistrictMultiSelect(districts) {
             const dropdown = document.getElementById('districtDropdown');
-            
+
             // Keep the select all option
             const selectAllOption = dropdown.querySelector('.multi-select-all');
-            
+
             // Clear everything except select all
             while (dropdown.children.length > 1) {
                 dropdown.removeChild(dropdown.lastChild);
             }
-            
+
             if (districts && districts.length > 0) {
                 districts.forEach(district => {
                     const div = document.createElement('div');
@@ -904,7 +897,7 @@
                 div.textContent = 'No districts available';
                 dropdown.appendChild(div);
             }
-            
+
             // Reset selected districts
             selectedDistricts = [];
             updateSelectedDistricts();
@@ -1183,14 +1176,10 @@
         }
 
         function handleAPIError() {
-            console.log('🔄 Handling API error - switching to sample data');
+            console.log('🔄 API not available - no sample data will be shown');
             apiAvailable = false;
-            showErrorMessage('Flask API is not running. Using sample data. <br>To connect to Snowflake: <br>1. Run: python app.py <br>2. Refresh this page');
-            useSampleData();
-            setTimeout(() => {
-                console.log('📊 Loading sample data after API error...');
-                fetchData();
-            }, 1000);
+            showErrorMessage('Flask API is not running. <br>To view data: <br>1. Run: python app.py <br>2. Refresh this page');
+            showNoDataMessage();
         }
 
         function showErrorMessage(message) {
@@ -1237,11 +1226,6 @@
                     if (data.submarketClusters) {
                         submarketClusters = data.submarketClusters;
                         console.log('🏙️ Submarket-cluster relationships loaded:', Object.keys(submarketClusters).length, 'submarkets');
-
-                        // Log the relationships for debugging
-                        Object.keys(submarketClusters).forEach(submarket => {
-                            console.log(`  ${submarket}: ${submarketClusters[submarket].length} clusters`);
-                        });
                     }
 
                     // Store all clusters
@@ -1256,11 +1240,11 @@
                     console.log('✅ Filter options loaded successfully');
                 } else {
                     console.error('❌ Filter options API error:', response.status);
-                    useSampleData();
+                    showNoDataMessage();
                 }
             } catch (error) {
                 console.error('❌ Error loading filters:', error);
-                useSampleData();
+                showNoDataMessage();
             }
         }
 
@@ -1290,12 +1274,11 @@
 
             // Update district visibility when Apply Filters is clicked
             updateDistrictVisibility(submarket);
-            updateDataLevelIndicator(submarket);
-            pendingSubmarket = submarket;  
+            pendingSubmarket = submarket;
 
             const filters = {
                 submarket: submarket,
-                district: districtValues,  // Now sends comma-separated districts
+                district: districtValues,
                 cqeClusters: clusterValues,
                 periodStart: document.getElementById('periodStart').value,
                 periodEnd: document.getElementById('periodEnd').value,
@@ -1309,12 +1292,11 @@
             console.log('📊 Ranking criteria:', sortingCriteria);
             console.log('📍 Selected clusters:', selectedClusters);
             console.log('📍 Selected districts:', selectedDistricts);
-            console.log('📍 District data:', submarket ? 'Will be loaded' : 'Not applicable');
             showLoading();
 
             if (!apiAvailable) {
-                console.log('⚠️ API not available, using sample data');
-                generateSampleData();
+                console.log('⚠️ API not available');
+                showNoDataMessage();
                 return;
             }
 
@@ -1345,166 +1327,57 @@
 
                         if (Array.isArray(data)) {
                             console.log(`📈 Data is array with ${data.length} records`);
+
+                            if (data.length === 0) {
+                                showNoDataMessage();
+                                return;
+                            }
+
                             console.log(`🎯 Data is sorted by ${sortingCriteria} at the database level`);
                             console.log(`📊 Data FOCUSLEV: ${data[0]?.FOCUSLEV !== undefined ? data[0].FOCUSLEV : 'Not specified'}`);
 
-                            // Check if district data is present
-                            if (data.length > 0 && data[0].DISTRICT !== undefined) {
-                                console.log('📍 District data found in response');
-                            }
-
-                            if (data.length > 0) {
-                                console.log('🔍 First record keys:', Object.keys(data[0]));
-                            }
                             currentData = data;
                             updateDashboard(data);
                         } else if (data.error) {
                             console.error('❌ API returned error:', data.error);
                             showErrorMessage(`API Error: ${data.error}`);
-                            generateSampleData();
+                            showNoDataMessage();
                         } else {
                             console.error('❌ Unexpected data format:', typeof data);
                             showErrorMessage('Unexpected data format received from API');
-                            generateSampleData();
+                            showNoDataMessage();
                         }
                     } catch (jsonError) {
                         console.error('❌ JSON parsing failed:', jsonError);
-                        console.error('Raw response (first 500 chars):', responseText.substring(0, 500));
                         showErrorMessage(`Invalid JSON response: ${jsonError.message}`);
-                        generateSampleData();
+                        showNoDataMessage();
                     }
                 } else {
                     console.error('❌ API returned error status:', response.status);
                     const errorText = await response.text();
                     console.error('Error response:', errorText);
-                    showErrorMessage(`API Error: ${response.status} - ${errorText}`);
-                    generateSampleData();
+                    showErrorMessage(`API Error: ${response.status}`);
+                    showNoDataMessage();
                 }
             } catch (error) {
                 console.error('❌ Fetch error:', error);
-                if (error.name === 'TypeError' && error.message.includes('fetch')) {
-                    showErrorMessage('Cannot connect to API - make sure Flask server is running');
-                } else if (error.name === 'AbortError' || error.message.includes('timeout')) {
-                    showErrorMessage('Request timeout - try a smaller date range');
-                } else {
-                    showErrorMessage(`Network error: ${error.message}`);
-                }
-                generateSampleData();
+                showErrorMessage(`Network error: ${error.message}`);
+                showNoDataMessage();
             }
         }
 
-        function generateSampleData() {
-            const sampleData = [];
-            const metrics = ['V-CDR', 'NS/ESO', 'Quality RSRP', 'Quality RSRQ', 'V-ACC', 'V-ACC-E2E', 'D-ACC', 'DLTPUT', 'ULTPUT', 'D-RET', 'WIFI-RET'];
-            const vendors = ['Nokia', 'Ericsson', 'Huawei', 'Samsung'];
-            const clusters = ['CQE_EAST', 'CQE_WEST', 'CQE_CENTRAL', 'CQE_SOUTH', 'CQE_NORTH'];
-            const submarkets = ['NYC', 'LA', 'Chicago', 'Houston', 'Phoenix', 'Central Illinois'];
-            const districts = ['86A', '86B', '86C', '86D', '86E', '86F', '86G', '86H'];
-
-            // Sample submarket-cluster relationships for demo
-            submarketClusters = {
-                'NYC': ['CQE_EAST', 'CQE_NORTH'],
-                'LA': ['CQE_WEST'],
-                'Chicago': ['CQE_CENTRAL', 'CQE_NORTH'],
-                'Houston': ['CQE_SOUTH', 'CQE_CENTRAL'],
-                'Phoenix': ['CQE_WEST', 'CQE_SOUTH'],
-                'Central Illinois': ['CQE_CENTRAL']
-            };
-
-            const selectedMetric = document.getElementById('metricName').value;
-            const selectedSubmarket = document.getElementById('submarket').value;
-            const focusLevel = selectedSubmarket ? 3 : 0;
-
-            // Filter clusters based on selection and submarket
-            let availableClusters = clusters;
-            if (selectedSubmarket && submarketClusters[selectedSubmarket]) {
-                availableClusters = submarketClusters[selectedSubmarket];
-            }
-
-            const filteredClusters = selectedClusters.length > 0 ?
-                availableClusters.filter(c => selectedClusters.includes(c)) : availableClusters;
-
-            if (!selectedMetric) {
-                for (let i = 0; i < 50; i++) {
-                    const usid = `${10000 + i}`;
-                    
-                    // Assign district based on selection or randomly if no selection
-                    let assignedDistrict;
-                    if (selectedSubmarket) {
-                        assignedDistrict = districts[Math.floor(Math.random() * districts.length)];
-                        
-                        // Skip this record if districts are selected and this doesn't match
-                        if (selectedDistricts.length > 0 && !selectedDistricts.includes(assignedDistrict)) {
-                            continue;
-                        }
-                    } else {
-                        assignedDistrict = null;
-                    }
-
-                    let avgFailures;
-                    const rand = Math.random();
-                    if (rand > 0.95) {
-                        avgFailures = Math.floor(Math.random() * 30000) + 10000;
-                    } else if (rand > 0.8) {
-                        avgFailures = Math.floor(Math.random() * 5000) + 1000;
-                    } else if (rand > 0.5) {
-                        avgFailures = Math.floor(Math.random() * 500) + 100;
-                    } else {
-                        avgFailures = Math.floor(Math.random() * 100);
-                    }
-
-                    const recordCount = Math.floor(Math.random() * 100) + 20;
-                    const totalFailures = avgFailures * recordCount;
-
-                    const baseContrib = (Math.random() - 0.6) * 0.1;
-                    const avgContribution = parseFloat(baseContrib.toFixed(4));
-                    const totalContribution = avgContribution * recordCount;
-
-                    sampleData.push({
-                        USID: usid,
-                        METRICNAME: 'ALL',
-                        METRIC_DISPLAY: 'All',
-                        AVG_EXTRAFAILURES: avgFailures,
-                        TOTAL_EXTRAFAILURES: totalFailures,
-                        AVG_IDXCONTR: avgContribution,
-                        TOTAL_IDXCONTR: totalContribution,
-                        IDXCONTR: avgContribution,
-                        RECORD_COUNT: recordCount,
-                        EXTRAFAILURES: avgFailures,
-                        VENDOR: vendors[Math.floor(Math.random() * vendors.length)],
-                        CQECLUSTER: filteredClusters[Math.floor(Math.random() * filteredClusters.length)],
-                        SUBMKT: selectedSubmarket || submarkets[Math.floor(Math.random() * submarkets.length)],
-                        DISTRICT: assignedDistrict,
-                        FOCUSLEV: focusLevel,
-                        EARLIEST_PERIOD: new Date(Date.now() - recordCount * 24 * 60 * 60 * 1000).toISOString(),
-                        LATEST_PERIOD: new Date().toISOString()
-                    });
-                }
-            }
-
-            // Update filter dropdowns
-            allClusters = clusters;
-            currentSubmarketClusters = availableClusters;
-
-            populateSelect('submarket', submarkets);
-            populateMultiSelect('cqeCluster', availableClusters);
-            populateSelect('metricName', metrics);
-
-            currentData = sampleData;
-            updateDashboard(sampleData);
-        }
-
-        function useSampleData() {
-            generateSampleData();
+        function showNoDataMessage() {
+            document.querySelector('.loading').style.display = 'none';
+            document.querySelector('.table-container').style.display = 'none';
+            document.getElementById('noDataMessage').style.display = 'block';
         }
 
         function updateDashboard(data) {
             console.log('🔄 Updating dashboard with data:', data);
 
             try {
-                if (!Array.isArray(data)) {
-                    console.error('❌ Data is not an array:', typeof data);
-                    showErrorMessage('Invalid data format received');
+                if (!Array.isArray(data) || data.length === 0) {
+                    showNoDataMessage();
                     return;
                 }
 
@@ -1513,7 +1386,7 @@
                     console.log(`📊 Data FOCUSLEV: ${data[0].FOCUSLEV}`);
                 }
                 currentData = data;
-                displayData = [...data];  
+                displayData = [...data];
                 hideLoading();
 
                 updateTable(displayData);
@@ -1522,13 +1395,18 @@
             } catch (error) {
                 console.error('❌ Error updating dashboard:', error);
                 showErrorMessage(`Error updating dashboard: ${error.message}`);
-                hideLoading();
+                showNoDataMessage();
             }
         }
 
         function updateTable(data) {
             const tbody = document.getElementById('tableBody');
             tbody.innerHTML = '';
+
+            if (!data || data.length === 0) {
+                showNoDataMessage();
+                return;
+            }
 
             const sortingCriteria = document.getElementById('sortingCriteria').value;
 
@@ -1606,9 +1484,6 @@
                     severityClass = 'severity-low';
                 }
 
-                // Store severity in row data for filtering
-                row.severity = severity;
-
                 const metricDisplay = row.METRIC_DISPLAY || row.METRICNAME || '-';
 
                 const contribColor = contribution < 0 ? '#ef4444' : '#22c55e';
@@ -1618,7 +1493,7 @@
 
                 const totalFailuresCell = `<strong title="Total: ${formatFullNumber(validTotal)} failures">${formatCompactNumber(validTotal)}</strong>`;
 
-                // Handle district display - now always visible in table
+                // Handle district display
                 const district = row.DISTRICT || '-';
                 const districtClass = district === '-' ? 'district-badge no-data' : 'district-badge';
                 const districtCell = `<td><span class="${districtClass}">${district}</span></td>`;
@@ -1643,14 +1518,18 @@
                 `;
                 tbody.appendChild(tr);
             });
+
+            // Hide no data message and show table
+            document.getElementById('noDataMessage').style.display = 'none';
+            document.querySelector('.table-container').style.display = 'block';
         }
 
         function resetFilters() {
             document.getElementById('submarket').value = '';
-            
-            // Update data level indicator
-            updateDataLevelIndicator('');
-            
+
+            // Reset focus level
+            currentFocusLevel = 0;
+
             // Reset district multi-select
             selectedDistricts = [];
             const districtInput = document.getElementById('districtInput');
@@ -1730,7 +1609,7 @@
                 exportRow.AggregationType = isShowingAllMetrics ? 'All Metrics' : 'Single Metric';
                 exportRow.SortedBy = sortingCriteria === 'contribution' ? 'Contribution (Worst First)' : 'Total Failures (Highest First)';
                 exportRow.DataLevel = currentFocusLevel === 0 ? 'National (FOCUSLEV=0)' : 'Submarket (FOCUSLEV=3)';
-                
+
                 // Add filter information
                 if (selectedDistricts.length > 0) {
                     exportRow.FilteredDistricts = selectedDistricts.join(';');
@@ -1770,11 +1649,13 @@
         function showLoading() {
             document.querySelector('.loading').style.display = 'block';
             document.querySelector('.table-container').style.display = 'none';
+            document.getElementById('noDataMessage').style.display = 'none';
         }
 
         function hideLoading() {
             document.querySelector('.loading').style.display = 'none';
             document.querySelector('.table-container').style.display = 'block';
+            document.getElementById('noDataMessage').style.display = 'none';
         }
     </script>
 </body>

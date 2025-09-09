@@ -96,23 +96,7 @@ def load_submarket_cluster_mapping():
 
     if not os.path.exists(MAPPING_CSV_PATH):
         logger.warning(f"Mapping CSV file not found: {MAPPING_CSV_PATH}")
-        logger.warning("Creating sample mapping file...")
-
-        sample_data = [
-            ['SUBMKT', 'CQECLUSTER'],
-            ['NYC', 'CQE_NYC_MANHATTAN'],
-            ['NYC', 'CQE_NYC_BROOKLYN'],
-            ['LA', 'CQE_LA_DOWNTOWN'],
-            ['LA', 'CQE_LA_HOLLYWOOD'],
-            ['Chicago', 'CQE_CHI_NORTH'],
-            ['Chicago', 'CQE_CHI_SOUTH'],
-        ]
-
-        with open(MAPPING_CSV_PATH, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerows(sample_data)
-
-        logger.info(f"Sample mapping file created: {MAPPING_CSV_PATH}")
+        return {}
 
     try:
         with open(MAPPING_CSV_PATH, 'r', encoding='utf-8') as f:
@@ -529,7 +513,8 @@ def get_cqi_data():
         focus_level = 3 if submarket else 0
 
         logger.info(f"Data request with sorting: {sorting_criteria}")
-        logger.info(f"FOCUSLEV: {focus_level} (submarket: {submarket or 'None'})")
+        logger.info(
+            f"FOCUSLEV: {focus_level} (submarket: {submarket or 'None'})")
         logger.info(f"Selected Districts: {districts}")
         logger.info(f"Selected CQE Clusters: {cqe_clusters}")
 
@@ -549,6 +534,7 @@ def get_cqi_data():
 
         aggregate_all_metrics = not metric_name
 
+        # Fixed SQL query - removed the numeric '2.VENDOR' issue
         if aggregate_all_metrics:
             query = """
                 SELECT 
@@ -559,9 +545,9 @@ def get_cqi_data():
                     AVG(IDXCONTR) as AVG_IDXCONTR,
                     SUM(IDXCONTR) as TOTAL_IDXCONTR,
                     COUNT(*) as RECORD_COUNT,
-                    MAX(VENDOR) as VENDOR,
-                    MAX(CQECLUSTER) as CQECLUSTER,
-                    MAX(SUBMKT) as SUBMKT,
+                    ANY_VALUE(VENDOR) as VENDOR,
+                    ANY_VALUE(CQECLUSTER) as CQECLUSTER,
+                    ANY_VALUE(SUBMKT) as SUBMKT,
                     AVG(FOCUSAREA_L1CQIACTUAL) as AVG_ACTUAL,
                     AVG(CQITARGET) as AVG_TARGET,
                     MIN(PERIODSTART) as EARLIEST_PERIOD,
@@ -579,9 +565,9 @@ def get_cqi_data():
                     AVG(IDXCONTR) as AVG_IDXCONTR,
                     SUM(IDXCONTR) as TOTAL_IDXCONTR,
                     COUNT(*) as RECORD_COUNT,
-                    MAX(VENDOR) as VENDOR,
-                    MAX(CQECLUSTER) as CQECLUSTER,
-                    MAX(SUBMKT) as SUBMKT,
+                    ANY_VALUE(VENDOR) as VENDOR,
+                    ANY_VALUE(CQECLUSTER) as CQECLUSTER,
+                    ANY_VALUE(SUBMKT) as SUBMKT,
                     AVG(FOCUSAREA_L1CQIACTUAL) as AVG_ACTUAL,
                     AVG(CQITARGET) as AVG_TARGET,
                     MIN(PERIODSTART) as EARLIEST_PERIOD,
@@ -668,7 +654,8 @@ def get_cqi_data():
         cur.close()
         conn.close()
 
-        logger.info(f"Retrieved {len(data)} records with FOCUSLEV={focus_level}")
+        logger.info(
+            f"Retrieved {len(data)} records with FOCUSLEV={focus_level}")
 
         # Load district mapping if submarket is selected
         district_mapping = {}
@@ -780,7 +767,7 @@ def get_summary_stats():
         """
 
         params = [start_date, end_date, focus_level] + allowed_metrics
-        
+
         if submarket and focus_level == 3:
             query += " AND SUBMKT = %s"
             params.append(submarket)
@@ -842,7 +829,7 @@ def get_usid_detail():
             'VOLTE_WIFI_CDR_25': 'WIFI-RET'
         }
 
-        # Query includes FOCUSLEV filtering
+        # Query includes FOCUSLEV filtering - fixed MAX to ANY_VALUE
         query = """
             SELECT 
                 USID,
@@ -850,9 +837,9 @@ def get_usid_detail():
                 DATE(PERIODSTART) as DATE,
                 AVG(EXTRAFAILURES) as EXTRAFAILURES,
                 AVG(IDXCONTR) as IDXCONTR,
-                MAX(VENDOR) as VENDOR,
-                MAX(CQECLUSTER) as CQECLUSTER,
-                MAX(SUBMKT) as SUBMKT,
+                ANY_VALUE(VENDOR) as VENDOR,
+                ANY_VALUE(CQECLUSTER) as CQECLUSTER,
+                ANY_VALUE(SUBMKT) as SUBMKT,
                 MAX(FOCUSLEV) as FOCUSLEV
             FROM CQI2025_CQX_CONTRIBUTION
             WHERE USID = %s
@@ -1065,8 +1052,8 @@ if __name__ == '__main__':
                 f"   Total cluster mappings: {sum(len(clusters) for clusters in mapping.values())}")
     else:
         print(
-            f"⚠️  Mapping file not found. A sample file will be created at: {MAPPING_CSV_PATH}")
-        print("   Please update it with your actual submarket-cluster mappings")
+            f"⚠️  Mapping file not found: {MAPPING_CSV_PATH}")
+        print("   The system will work without submarket-cluster mappings")
 
     # Check for district CSV files
     district_files = [f for f in os.listdir(
@@ -1089,7 +1076,7 @@ if __name__ == '__main__':
         print("❌ Configuration incomplete. Please check environment variables.")
 
     print("\n📡 API will be available at: http://localhost:5000")
-    print("✨ Features: FOCUSLEV-based hierarchical data filtering + CSV-based mappings!")
+    print("✨ Features: FOCUSLEV-based hierarchical data filtering!")
     print("-" * 50)
 
     app.run(debug=False, host='0.0.0.0', port=5000)
