@@ -291,9 +291,21 @@
             overflow-x: auto;
         }
 
-        table {
+        .table-container table {
             width: 100%;
             border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        .table-container tbody tr {
+            height: auto;
+            line-height: 1.5;
+        }
+
+        .table-container tbody td {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         th {
