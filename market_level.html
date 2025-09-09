@@ -508,7 +508,7 @@
         async function fetchMarketData() {
             const submarket = document.getElementById('submarketFilter').value;
             const metricFilter = document.getElementById('metricFilter').value;
-            const days = parseInt(document.getElementById('dateRange').value) || 30);
+            const days = parseInt(document.getElementById('dateRange').value) || 30;
 
             if (!submarket) {
                 showError('Please select a submarket to view data');
