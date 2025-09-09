@@ -830,7 +830,6 @@ def get_usid_detail():
                 DATE(PERIODSTART) as DATE,
                 AVG(EXTRAFAILURES) as EXTRAFAILURES,
                 AVG(IDXCONTR) as IDXCONTR,
-                MAX(VENDOR) as VENDOR,
                 MAX(CQECLUSTER) as CQECLUSTER,
                 MAX(SUBMKT) as SUBMKT
             FROM CQI2025_CQX_CONTRIBUTION
