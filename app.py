@@ -299,12 +299,13 @@ def test_connection():
             """)
             date_range = cur.fetchone()
 
-            # Sample data from FOCUSLEV=3 (submarket level)
+            # Sample data from FOCUSLEV=3 (submarket level) - updated to match actual table structure
             cur.execute("""
-                SELECT USID, METRICNAME, EXTRAFAILURES, IDXCONTR, VENDOR, CQECLUSTER, SUBMKT, PERIODSTART, FOCUSLEV
+                SELECT DETAILAREA as USID, METRICNAME, EXTRAFAILURES, IDXCONTR, VENDOR, CQECLUSTER, SUBMKT, PERIODSTART, FOCUSLEV
                 FROM CQI2025_CQX_CONTRIBUTION
                 WHERE PERIODSTART IS NOT NULL
                 AND FOCUSLEV = 3
+                AND DETAILLEV = 'USID'
                 AND METRICNAME IN (
                     'VOICE_CDR_RET_25', 'LTE_IQI_NS_ESO_25', 'LTE_IQI_RSRP_25',
                     'LTE_IQI_QUALITY_25', 'VOLTE_RAN_ACBACC_25_ALL', 'VOLTE_CDR_MOMT_ACC_25',
@@ -534,46 +535,48 @@ def get_cqi_data():
 
         aggregate_all_metrics = not metric_name
 
-        # Fixed SQL query - removed the numeric '2.VENDOR' issue
+        # Updated SQL query to match actual table structure with DETAILAREA as USID
         if aggregate_all_metrics:
             query = """
                 SELECT 
-                    USID,
+                    DETAILAREA as USID,
                     'ALL' as METRICNAME,
                     AVG(EXTRAFAILURES) as AVG_EXTRAFAILURES,
                     SUM(EXTRAFAILURES) as TOTAL_EXTRAFAILURES,
                     AVG(IDXCONTR) as AVG_IDXCONTR,
                     SUM(IDXCONTR) as TOTAL_IDXCONTR,
                     COUNT(*) as RECORD_COUNT,
-                    ANY_VALUE(VENDOR) as VENDOR,
-                    ANY_VALUE(CQECLUSTER) as CQECLUSTER,
-                    ANY_VALUE(SUBMKT) as SUBMKT,
+                    MAX(VENDOR) as VENDOR,
+                    MAX(CQECLUSTER) as CQECLUSTER,
+                    MAX(SUBMKT) as SUBMKT,
                     AVG(FOCUSAREA_L1CQIACTUAL) as AVG_ACTUAL,
                     AVG(CQITARGET) as AVG_TARGET,
                     MIN(PERIODSTART) as EARLIEST_PERIOD,
                     MAX(PERIODEND) as LATEST_PERIOD
                 FROM CQI2025_CQX_CONTRIBUTION
                 WHERE FOCUSLEV = %s
+                AND DETAILLEV = 'USID'
             """
         else:
             query = """
                 SELECT 
-                    USID,
+                    DETAILAREA as USID,
                     METRICNAME,
                     AVG(EXTRAFAILURES) as AVG_EXTRAFAILURES,
                     SUM(EXTRAFAILURES) as TOTAL_EXTRAFAILURES,
                     AVG(IDXCONTR) as AVG_IDXCONTR,
                     SUM(IDXCONTR) as TOTAL_IDXCONTR,
                     COUNT(*) as RECORD_COUNT,
-                    ANY_VALUE(VENDOR) as VENDOR,
-                    ANY_VALUE(CQECLUSTER) as CQECLUSTER,
-                    ANY_VALUE(SUBMKT) as SUBMKT,
+                    MAX(VENDOR) as VENDOR,
+                    MAX(CQECLUSTER) as CQECLUSTER,
+                    MAX(SUBMKT) as SUBMKT,
                     AVG(FOCUSAREA_L1CQIACTUAL) as AVG_ACTUAL,
                     AVG(CQITARGET) as AVG_TARGET,
                     MIN(PERIODSTART) as EARLIEST_PERIOD,
                     MAX(PERIODEND) as LATEST_PERIOD
                 FROM CQI2025_CQX_CONTRIBUTION
                 WHERE FOCUSLEV = %s
+                AND DETAILLEV = 'USID'
             """
 
         # Start with FOCUSLEV parameter
@@ -608,7 +611,7 @@ def get_cqi_data():
             params.append(actual_metric)
 
         if usid:
-            query += " AND USID = %s"
+            query += " AND DETAILAREA = %s"
             params.append(usid)
 
         # Handle district filtering when both submarket and districts are selected
@@ -619,7 +622,7 @@ def get_cqi_data():
                 usids_in_districts = [
                     usid for usid, dist in district_mapping.items() if dist in districts]
                 if usids_in_districts:
-                    query += f" AND USID IN ({','.join(['%s'] * len(usids_in_districts))})"
+                    query += f" AND DETAILAREA IN ({','.join(['%s'] * len(usids_in_districts))})"
                     params.extend(usids_in_districts)
                     logger.info(
                         f"Filtering {len(usids_in_districts)} USIDs for districts: {districts}")
@@ -628,9 +631,9 @@ def get_cqi_data():
                         f"No USIDs found for districts: {districts}")
 
         if aggregate_all_metrics:
-            query += " GROUP BY USID"
+            query += " GROUP BY DETAILAREA"
         else:
-            query += " GROUP BY USID, METRICNAME"
+            query += " GROUP BY DETAILAREA, METRICNAME"
 
         if sorting_criteria == 'contribution':
             query += " ORDER BY AVG_IDXCONTR ASC NULLS LAST"
@@ -751,7 +754,7 @@ def get_summary_stats():
 
         query = f"""
             SELECT 
-                COUNT(DISTINCT USID) as total_usids,
+                COUNT(DISTINCT DETAILAREA) as total_usids,
                 COUNT(*) as total_records,
                 SUM(EXTRAFAILURES) as total_failures,
                 AVG(EXTRAFAILURES) as avg_failures,
@@ -763,6 +766,7 @@ def get_summary_stats():
             FROM CQI2025_CQX_CONTRIBUTION
             WHERE PERIODSTART >= %s AND PERIODSTART <= %s
             AND FOCUSLEV = %s
+            AND DETAILLEV = 'USID'
             AND METRICNAME IN ({','.join(['%s'] * len(allowed_metrics))})
         """
 
@@ -829,21 +833,22 @@ def get_usid_detail():
             'VOLTE_WIFI_CDR_25': 'WIFI-RET'
         }
 
-        # Query includes FOCUSLEV filtering - fixed MAX to ANY_VALUE
+        # Query includes FOCUSLEV filtering - updated to use DETAILAREA
         query = """
             SELECT 
-                USID,
+                DETAILAREA as USID,
                 METRICNAME,
                 DATE(PERIODSTART) as DATE,
                 AVG(EXTRAFAILURES) as EXTRAFAILURES,
                 AVG(IDXCONTR) as IDXCONTR,
-                ANY_VALUE(VENDOR) as VENDOR,
-                ANY_VALUE(CQECLUSTER) as CQECLUSTER,
-                ANY_VALUE(SUBMKT) as SUBMKT,
+                MAX(VENDOR) as VENDOR,
+                MAX(CQECLUSTER) as CQECLUSTER,
+                MAX(SUBMKT) as SUBMKT,
                 MAX(FOCUSLEV) as FOCUSLEV
             FROM CQI2025_CQX_CONTRIBUTION
-            WHERE USID = %s
+            WHERE DETAILAREA = %s
             AND FOCUSLEV = %s
+            AND DETAILLEV = 'USID'
         """
 
         allowed_metrics = list(metric_mapping.keys())
@@ -869,7 +874,7 @@ def get_usid_detail():
             params.append(actual_metric)
 
         query += """
-            GROUP BY USID, METRICNAME, DATE(PERIODSTART)
+            GROUP BY DETAILAREA, METRICNAME, DATE(PERIODSTART)
             ORDER BY DATE(PERIODSTART), METRICNAME
         """
 
