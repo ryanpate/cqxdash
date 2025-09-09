@@ -1,6 +1,7 @@
 """
 CQI Dashboard Flask API - With District Support from CSV Files
 Reads district data from {SUBMARKET}.csv files
+Fixed version with VENDOR completely removed and FOCUSLEV handled properly
 """
 
 from dotenv import load_dotenv
@@ -307,7 +308,7 @@ def test_connection():
             date_range = cur.fetchone()
 
             cur.execute("""
-                SELECT USID, METRICNAME, EXTRAFAILURES, IDXCONTR, VENDOR, CQECLUSTER, SUBMKT, PERIODSTART
+                SELECT USID, METRICNAME, EXTRAFAILURES, IDXCONTR, CQECLUSTER, SUBMKT, PERIODSTART
                 FROM CQI2025_CQX_CONTRIBUTION
                 WHERE PERIODSTART IS NOT NULL
                 AND METRICNAME IN (
@@ -330,10 +331,9 @@ def test_connection():
                     'METRICNAME': row[1],
                     'EXTRAFAILURES': extrafailures,
                     'IDXCONTR': idxcontr,
-                    'VENDOR': row[4],
-                    'CLUSTER': row[5],
-                    'SUBMKT': row[6],
-                    'PERIODSTART': row[7].strftime('%Y-%m-%d %H:%M:%S') if row[7] else None
+                    'CLUSTER': row[4],
+                    'SUBMKT': row[5],
+                    'PERIODSTART': row[6].strftime('%Y-%m-%d %H:%M:%S') if row[6] else None
                 })
 
         cur.close()
@@ -544,7 +544,7 @@ def get_cqi_data():
 
         aggregate_all_metrics = not metric_name
 
-        # Build query
+        # Build query without VENDOR field and with proper FOCUSLEV handling
         if aggregate_all_metrics:
             query = """
                 SELECT 
@@ -555,10 +555,8 @@ def get_cqi_data():
                     AVG(IDXCONTR) as AVG_IDXCONTR,
                     SUM(IDXCONTR) as TOTAL_IDXCONTR,
                     COUNT(*) as RECORD_COUNT,
-                    MAX(VENDOR) as VENDOR,
                     MAX(CQECLUSTER) as CQECLUSTER,
                     MAX(SUBMKT) as SUBMKT,
-                    MAX(FOCUSLEV) as FOCUSLEV,
                     AVG(FOCUSAREA_L1CQIACTUAL) as AVG_ACTUAL,
                     AVG(CQITARGET) as AVG_TARGET,
                     MIN(PERIODSTART) as EARLIEST_PERIOD,
@@ -576,10 +574,8 @@ def get_cqi_data():
                     AVG(IDXCONTR) as AVG_IDXCONTR,
                     SUM(IDXCONTR) as TOTAL_IDXCONTR,
                     COUNT(*) as RECORD_COUNT,
-                    MAX(VENDOR) as VENDOR,
                     MAX(CQECLUSTER) as CQECLUSTER,
                     MAX(SUBMKT) as SUBMKT,
-                    MAX(FOCUSLEV) as FOCUSLEV,
                     AVG(FOCUSAREA_L1CQIACTUAL) as AVG_ACTUAL,
                     AVG(CQITARGET) as AVG_TARGET,
                     MIN(PERIODSTART) as EARLIEST_PERIOD,
@@ -596,9 +592,11 @@ def get_cqi_data():
         if submarket:
             query += " AND SUBMKT = %s"
             params.append(submarket)
-            query += " AND FOCUSLEV = 2"  # Submarket level
+            # Don't filter by FOCUSLEV - let the data determine it
+            # The data should naturally be at the right level based on SUBMKT
         else:
-            query += " AND FOCUSLEV = 0"  # National level
+            # For national level, we only want FOCUSLEV 0
+            query += " AND FOCUSLEV = 0"
 
         if cqe_clusters:
             query += f" AND CQECLUSTER IN ({','.join(['%s'] * len(cqe_clusters))})"
@@ -661,6 +659,24 @@ def get_cqi_data():
         columns = [desc[0] for desc in cur.description]
         data = cur.fetchall()
 
+        # Also get the actual FOCUSLEV from the data if submarket is selected
+        focus_level = 0  # Default to national
+        if submarket and len(data) > 0:
+            # Query to get the actual FOCUSLEV for this submarket
+            focus_query = """
+                SELECT DISTINCT FOCUSLEV 
+                FROM CQI2025_CQX_CONTRIBUTION 
+                WHERE SUBMKT = %s 
+                LIMIT 1
+            """
+            cur.execute(focus_query, [submarket])
+            focus_result = cur.fetchone()
+            if focus_result:
+                focus_level = int(
+                    focus_result[0]) if focus_result[0] is not None else 0
+                logger.info(
+                    f"Actual FOCUSLEV for submarket {submarket}: {focus_level}")
+
         cur.close()
         conn.close()
 
@@ -683,7 +699,7 @@ def get_cqi_data():
                     record[col] = clean_contribution_value(value)
                 elif col in ['AVG_ACTUAL', 'AVG_TARGET']:
                     record[col] = clean_numeric_value(value)
-                elif col in ['RECORD_COUNT', 'FOCUSLEV']:
+                elif col == 'RECORD_COUNT':
                     record[col] = int(value) if value else 0
                 elif col in ['EARLIEST_PERIOD', 'LATEST_PERIOD']:
                     if value is not None:
@@ -706,6 +722,9 @@ def get_cqi_data():
             record['EXTRAFAILURES'] = record.get('AVG_EXTRAFAILURES', 0)
             record['IDXCONTR'] = record.get('AVG_IDXCONTR', 0)
 
+            # Add VENDOR as empty string for frontend compatibility
+            record['VENDOR'] = ''
+
             # Add district information if available
             if submarket and district_mapping:
                 usid_str = str(record.get('USID', ''))
@@ -713,9 +732,8 @@ def get_cqi_data():
             else:
                 record['DISTRICT'] = None
 
-            # Ensure FOCUSLEV is in the response
-            if 'FOCUSLEV' not in record:
-                record['FOCUSLEV'] = 2 if submarket else 0
+            # Add FOCUSLEV to the response
+            record['FOCUSLEV'] = focus_level
 
             result.append(record)
 
@@ -896,6 +914,9 @@ def get_usid_detail():
             else:
                 record['METRIC_DISPLAY'] = record.get('METRICNAME', '')
 
+            # Add VENDOR as empty string for compatibility
+            record['VENDOR'] = ''
+
             result.append(record)
 
         return jsonify(result)
@@ -1055,7 +1076,7 @@ if __name__ == '__main__':
         print("❌ Configuration incomplete. Please check environment variables.")
 
     print("\n📡 API will be available at: http://localhost:5000")
-    print("✨ Features: CSV-based Submarket-Cluster filtering + District mapping + District filtering!")
+    print("✨ Features: CSV-based Submarket-Cluster filtering + District mapping + Dynamic FOCUSLEV!")
     print("-" * 50)
 
     app.run(debug=False, host='0.0.0.0', port=5000)
