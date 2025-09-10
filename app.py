@@ -304,7 +304,7 @@ def test_connection():
 
             # Updated to include FOCUSLEV in sample query
             cur.execute("""
-                SELECT USID, METRICNAME, EXTRAFAILURES, IDXCONTR, VENDOR, CQECLUSTER, SUBMKT, PERIODSTART, FOCUSLEV
+                SELECT USID, METRICNAME, EXTRAFAILURES, IDXCONTR, CQECLUSTER, SUBMKT, PERIODSTART, FOCUSLEV
                 FROM CQI2025_CQX_CONTRIBUTION
                 WHERE PERIODSTART IS NOT NULL
                 AND METRICNAME IN (
