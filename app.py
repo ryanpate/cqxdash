@@ -529,10 +529,11 @@ def get_cqi_data():
 
         aggregate_all_metrics = not metric_name
 
+
         if aggregate_all_metrics:
             # Query with FOCUSLEV filter
             query = """
-                SELECT
+                SELECT 
                     USID,
                     'ALL' as METRICNAME,
                     AVG(EXTRAFAILURES) as AVG_EXTRAFAILURES,
@@ -540,9 +541,9 @@ def get_cqi_data():
                     AVG(IDXCONTR) as AVG_IDXCONTR,
                     SUM(IDXCONTR) as TOTAL_IDXCONTR,
                     COUNT(*) as RECORD_COUNT,
-                    MAX(VENDOR) as VENDOR,
-                    MAX(CQECLUSTER) as CQECLUSTER,
-                    MAX(SUBMKT) as SUBMKT,
+                    ANY_VALUE(VENDOR) as VENDOR,
+                    ANY_VALUE(CQECLUSTER) as CQECLUSTER,
+                    ANY_VALUE(SUBMKT) as SUBMKT,
                     AVG(FOCUSAREA_L1CQIACTUAL) as AVG_ACTUAL,
                     AVG(CQITARGET) as AVG_TARGET,
                     MIN(PERIODSTART) as EARLIEST_PERIOD,
@@ -550,7 +551,7 @@ def get_cqi_data():
                     MAX(FOCUSLEV) as FOCUSLEV
                 FROM CQI2025_CQX_CONTRIBUTION
                 WHERE FOCUSLEV = %s
-            """ 
+            """
         else:
             query = """
                 SELECT 
@@ -561,8 +562,9 @@ def get_cqi_data():
                     AVG(IDXCONTR) as AVG_IDXCONTR,
                     SUM(IDXCONTR) as TOTAL_IDXCONTR,
                     COUNT(*) as RECORD_COUNT,
-                    MAX(CQECLUSTER) as CQECLUSTER,
-                    MAX(SUBMKT) as SUBMKT,
+                    ANY_VALUE(VENDOR) as VENDOR,
+                    ANY_VALUE(CQECLUSTER) as CQECLUSTER,
+                    ANY_VALUE(SUBMKT) as SUBMKT,
                     AVG(FOCUSAREA_L1CQIACTUAL) as AVG_ACTUAL,
                     AVG(CQITARGET) as AVG_TARGET,
                     MIN(PERIODSTART) as EARLIEST_PERIOD,
@@ -571,7 +573,6 @@ def get_cqi_data():
                 FROM CQI2025_CQX_CONTRIBUTION
                 WHERE FOCUSLEV = %s
             """
-
         # Start with FOCUSLEV parameter
         params = [focus_level]
 
