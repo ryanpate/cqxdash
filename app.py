@@ -532,7 +532,7 @@ def get_cqi_data():
         if aggregate_all_metrics:
             # Query with FOCUSLEV filter
             query = """
-                SELECT 
+                SELECT
                     USID,
                     'ALL' as METRICNAME,
                     AVG(EXTRAFAILURES) as AVG_EXTRAFAILURES,
@@ -540,6 +540,7 @@ def get_cqi_data():
                     AVG(IDXCONTR) as AVG_IDXCONTR,
                     SUM(IDXCONTR) as TOTAL_IDXCONTR,
                     COUNT(*) as RECORD_COUNT,
+                    MAX(VENDOR) as VENDOR,  # Add this line - it was missing
                     MAX(CQECLUSTER) as CQECLUSTER,
                     MAX(SUBMKT) as SUBMKT,
                     AVG(FOCUSAREA_L1CQIACTUAL) as AVG_ACTUAL,
@@ -549,7 +550,7 @@ def get_cqi_data():
                     MAX(FOCUSLEV) as FOCUSLEV
                 FROM CQI2025_CQX_CONTRIBUTION
                 WHERE FOCUSLEV = %s
-            """
+            """ 
         else:
             query = """
                 SELECT 
