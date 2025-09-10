@@ -280,7 +280,6 @@ def test_connection():
 
         row_count = 0
         recent_count = 0
-        sample_data = []
         date_range = None
 
         if table_exists:
@@ -290,7 +289,7 @@ def test_connection():
             cur.execute("""
                 SELECT COUNT(*) 
                 FROM CQI2025_CQX_CONTRIBUTION
-                WHERE PERIODSTART >= DATEADD(day, -2, CURRENT_TIMESTAMP())
+                WHERE PERIODSTART >= DATEADD(day, -7, CURRENT_TIMESTAMP())
             """)
             recent_count = cur.fetchone()[0]
 
@@ -301,38 +300,6 @@ def test_connection():
                 FROM CQI2025_CQX_CONTRIBUTION
             """)
             date_range = cur.fetchone()
-
-            # Updated to include FOCUSLEV in sample query
-            cur.execute("""
-                SELECT USID, METRICNAME, EXTRAFAILURES, IDXCONTR, CQECLUSTER, SUBMKT, PERIODSTART, FOCUSLEV
-                FROM CQI2025_CQX_CONTRIBUTION
-                WHERE PERIODSTART IS NOT NULL
-                AND METRICNAME IN (
-                    'VOICE_CDR_RET_25', 'LTE_IQI_NS_ESO_25', 'LTE_IQI_RSRP_25',
-                    'LTE_IQI_QUALITY_25', 'VOLTE_RAN_ACBACC_25_ALL', 'VOLTE_CDR_MOMT_ACC_25',
-                    'ALLRAT_DACC_25', 'ALLRAT_DL_TPUT_25', 'ALLRAT_UL_TPUT_25',
-                    'ALLRAT_DDR_25', 'VOLTE_WIFI_CDR_25'
-                )
-                AND FOCUSLEV = 0
-                ORDER BY IDXCONTR ASC NULLS LAST
-                LIMIT 5
-            """)
-            sample_rows = cur.fetchall()
-
-            for row in sample_rows:
-                extrafailures = clean_numeric_value(row[2])
-                idxcontr = float(row[3]) if row[3] is not None else 0
-
-                sample_data.append({
-                    'USID': row[0],
-                    'METRICNAME': row[1],
-                    'EXTRAFAILURES': extrafailures,
-                    'IDXCONTR': idxcontr,
-                    'CLUSTER': row[5],
-                    'SUBMKT': row[6],
-                    'PERIODSTART': row[7].strftime('%Y-%m-%d %H:%M:%S') if row[7] else None,
-                    'FOCUSLEV': row[8] if len(row) > 8 else None
-                })
 
         cur.close()
         conn.close()
@@ -355,8 +322,7 @@ def test_connection():
             'schema': context[2],
             'table_exists': table_exists,
             'total_rows': row_count,
-            'recent_rows_2days': recent_count,
-            'sample_data': sample_data,
+            'recent_rows_7days': recent_count,
             'csv_mapping': mapping_info,
             'district_files_found': district_files[:5]
         }
@@ -529,9 +495,8 @@ def get_cqi_data():
 
         aggregate_all_metrics = not metric_name
 
-
         if aggregate_all_metrics:
-            # Query with FOCUSLEV filter
+            # Query with FOCUSLEV filter - extracting numeric part only
             query = """
                 SELECT 
                     USID,
@@ -547,9 +512,9 @@ def get_cqi_data():
                     AVG(CQITARGET) as AVG_TARGET,
                     MIN(PERIODSTART) as EARLIEST_PERIOD,
                     MAX(PERIODEND) as LATEST_PERIOD,
-                    MAX(FOCUSLEV) as FOCUSLEV
+                    MAX(LEFT(FOCUSLEV, 1)::INT) as FOCUSLEV
                 FROM CQI2025_CQX_CONTRIBUTION
-                WHERE FOCUSLEV = %s
+                WHERE LEFT(FOCUSLEV, 1)::INT = %s
             """
         else:
             query = """
@@ -567,10 +532,11 @@ def get_cqi_data():
                     AVG(CQITARGET) as AVG_TARGET,
                     MIN(PERIODSTART) as EARLIEST_PERIOD,
                     MAX(PERIODEND) as LATEST_PERIOD,
-                    MAX(FOCUSLEV) as FOCUSLEV
+                    MAX(LEFT(FOCUSLEV, 1)::INT) as FOCUSLEV
                 FROM CQI2025_CQX_CONTRIBUTION
-                WHERE FOCUSLEV = %s
+                WHERE LEFT(FOCUSLEV, 1)::INT = %s
             """
+
         # Start with FOCUSLEV parameter
         params = [focus_level]
 
@@ -735,7 +701,7 @@ def get_summary_stats():
 
         allowed_metrics = list(metric_mapping.keys())
 
-        # Summary always uses FOCUSLEV = 0 (National)
+        # Summary always uses FOCUSLEV = 0 (National) - extracting numeric part only
         query = f"""
             SELECT 
                 COUNT(DISTINCT USID) as total_usids,
@@ -750,7 +716,7 @@ def get_summary_stats():
             FROM CQI2025_CQX_CONTRIBUTION
             WHERE PERIODSTART >= %s AND PERIODSTART <= %s
             AND METRICNAME IN ({','.join(['%s'] * len(allowed_metrics))})
-            AND FOCUSLEV = 0
+            AND LEFT(FOCUSLEV, 1)::INT = 0
         """
 
         params = [start_date, end_date] + allowed_metrics
@@ -811,7 +777,7 @@ def get_usid_detail():
             'VOLTE_WIFI_CDR_25': 'WIFI-RET'
         }
 
-        # Updated query to include IDXCONTR and FOCUSLEV
+        # Updated query to include IDXCONTR and FOCUSLEV - extracting numeric part only
         query = """
             SELECT 
                 USID,
@@ -821,10 +787,10 @@ def get_usid_detail():
                 AVG(IDXCONTR) as IDXCONTR,
                 MAX(CQECLUSTER) as CQECLUSTER,
                 MAX(SUBMKT) as SUBMKT,
-                MAX(FOCUSLEV) as FOCUSLEV
+                MAX(LEFT(FOCUSLEV, 1)::INT) as FOCUSLEV
             FROM CQI2025_CQX_CONTRIBUTION
             WHERE USID = %s
-            AND FOCUSLEV = %s
+            AND LEFT(FOCUSLEV, 1)::INT = %s
         """
 
         allowed_metrics = list(metric_mapping.keys())
