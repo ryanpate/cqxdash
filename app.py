@@ -540,7 +540,7 @@ def get_cqi_data():
                     AVG(IDXCONTR) as AVG_IDXCONTR,
                     SUM(IDXCONTR) as TOTAL_IDXCONTR,
                     COUNT(*) as RECORD_COUNT,
-                    MAX(VENDOR) as VENDOR,  # Add this line - it was missing
+                    MAX(VENDOR) as VENDOR,
                     MAX(CQECLUSTER) as CQECLUSTER,
                     MAX(SUBMKT) as SUBMKT,
                     AVG(FOCUSAREA_L1CQIACTUAL) as AVG_ACTUAL,
