@@ -328,7 +328,6 @@ def test_connection():
                     'METRICNAME': row[1],
                     'EXTRAFAILURES': extrafailures,
                     'IDXCONTR': idxcontr,
-                    'VENDOR': row[4],
                     'CLUSTER': row[5],
                     'SUBMKT': row[6],
                     'PERIODSTART': row[7].strftime('%Y-%m-%d %H:%M:%S') if row[7] else None,
