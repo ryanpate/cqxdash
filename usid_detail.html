@@ -60,13 +60,13 @@
         .controls-grid {
             display: flex;
             gap: 20px;
-            align-items: center;
+            align-items: flex-end;
             flex-wrap: wrap;
         }
 
         .control-group {
             flex: 1;
-            min-width: 200px;
+            min-width: 150px;
         }
 
         .control-group label {
@@ -79,7 +79,8 @@
             display: block;
         }
 
-        .control-group select {
+        .control-group select,
+        .control-group input {
             width: 100%;
             padding: 10px;
             border: 2px solid #e2e8f0;
@@ -88,10 +89,57 @@
             transition: all 0.3s ease;
         }
 
-        .control-group select:focus {
+        .control-group select:focus,
+        .control-group input:focus {
             outline: none;
             border-color: #667eea;
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        /* Date range toggle styles */
+        .date-range-toggle {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .toggle-btn {
+            padding: 8px 16px;
+            border: 2px solid #e2e8f0;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .toggle-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .toggle-btn:hover:not(.active) {
+            background: #f7fafc;
+            border-color: #cbd5e0;
+        }
+
+        .date-range-container {
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .date-inputs {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+
+        .date-input-group {
+            min-width: 140px;
         }
 
         .btn {
@@ -124,6 +172,19 @@
         .btn-refresh:hover {
             transform: translateY(-2px);
             box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-apply {
+            background: #48bb78;
+            color: white;
+            padding: 10px 20px;
+            font-size: 0.9rem;
+        }
+
+        .btn-apply:hover {
+            background: #38a169;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(72, 187, 120, 0.3);
         }
 
         .btn-success {
@@ -388,27 +449,49 @@
         </div>
 
         <div class="controls-section">
-            <div class="controls-grid">
-                <div class="control-group">
-                    <label for="metricFilter">Filter by Metric</label>
-                    <select id="metricFilter">
-                        <option value="">All Metrics</option>
-                    </select>
+            <div class="control-group">
+                <label for="metricFilter">Filter by Metric</label>
+                <select id="metricFilter">
+                    <option value="">All Metrics</option>
+                </select>
+            </div>
+
+            <div style="flex: 2; min-width: 400px;">
+                <div class="date-range-toggle">
+                    <button class="toggle-btn active" id="presetToggle" onclick="toggleDateRangeMode('preset')">Preset
+                        Range</button>
+                    <button class="toggle-btn" id="customToggle" onclick="toggleDateRangeMode('custom')">Custom
+                        Range</button>
                 </div>
-                <div class="control-group">
-                    <label for="dateRange">Date Range</label>
-                    <select id="dateRange">
-                        <option value="7">Last 7 Days</option>
-                        <option value="14">Last 14 Days</option>
-                        <option value="30" selected>Last 30 Days</option>
-                        <option value="60">Last 60 Days</option>
-                        <option value="90">Last 90 Days</option>
-                    </select>
+
+                <div class="date-range-container">
+                    <div id="presetDateRange" class="control-group" style="display: block;">
+                        <select id="dateRange">
+                            <option value="7">Last 7 Days</option>
+                            <option value="14">Last 14 Days</option>
+                            <option value="30" selected>Last 30 Days</option>
+                            <option value="60">Last 60 Days</option>
+                            <option value="90">Last 90 Days</option>
+                        </select>
+                    </div>
+
+                    <div id="customDateRange" class="date-inputs" style="display: none;">
+                        <div class="date-input-group">
+                            <label for="startDate" style="font-size: 0.85rem;">Start Date</label>
+                            <input type="date" id="startDate">
+                        </div>
+                        <div class="date-input-group">
+                            <label for="endDate" style="font-size: 0.85rem;">End Date</label>
+                            <input type="date" id="endDate">
+                        </div>
+                        <button class="btn btn-apply" onclick="applyCustomDateRange()">Apply</button>
+                    </div>
                 </div>
-                <div style="display: flex; gap: 10px; align-items: flex-end;">
-                    <button class="btn btn-back" onclick="goBack()">← Back to Dashboard</button>
-                    <button class="btn btn-refresh" onclick="refreshData()">Refresh Data</button>
-                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; align-items: flex-end;">
+                <button class="btn btn-back" onclick="goBack()">← Back to Dashboard</button>
+                <button class="btn btn-refresh" onclick="refreshData()">Refresh Data</button>
             </div>
         </div>
 
@@ -420,8 +503,10 @@
 
             <div class="info-note">
                 <strong>📊 Understanding Contribution Values:</strong><br>
-                • <span style="color: #ef4444;">Negative values (red)</span> indicate worse performance - these sites are degrading the overall CQX score<br>
-                • <span style="color: #22c55e;">Positive values (green)</span> indicate better performance - these sites are improving the overall CQX score<br>
+                • <span style="color: #ef4444;">Negative values (red)</span> indicate worse performance - these sites
+                are degrading the overall CQX score<br>
+                • <span style="color: #22c55e;">Positive values (green)</span> indicate better performance - these sites
+                are improving the overall CQX score<br>
                 • The more negative the value, the worse the impact on network quality
             </div>
 
@@ -454,11 +539,13 @@
                     </div>
                     <div class="stat-card">
                         <h3>Worst Contribution</h3>
-                        <div class="value negative" id="worstContribution" title="Most negative value (worst performance)">0</div>
+                        <div class="value negative" id="worstContribution"
+                            title="Most negative value (worst performance)">0</div>
                     </div>
                     <div class="stat-card">
                         <h3>Best Contribution</h3>
-                        <div class="value positive" id="bestContribution" title="Most positive value (best performance)">0</div>
+                        <div class="value positive" id="bestContribution"
+                            title="Most positive value (best performance)">0</div>
                     </div>
                     <div class="stat-card">
                         <h3>Active Metrics</h3>
@@ -479,6 +566,9 @@
         let currentUSID = null;
         let activeMetrics = new Set();
         let allChartData = {};
+        let dateRangeMode = 'preset'; // 'preset' or 'custom'
+        let customStartDate = null;
+        let customEndDate = null;
 
         // Metric display name mapping
         const metricMapping = {
@@ -515,11 +605,63 @@
             return urlParams.get(name);
         }
 
+        // Toggle between preset and custom date range
+        function toggleDateRangeMode(mode) {
+            dateRangeMode = mode;
+
+            const presetToggle = document.getElementById('presetToggle');
+            const customToggle = document.getElementById('customToggle');
+            const presetRange = document.getElementById('presetDateRange');
+            const customRange = document.getElementById('customDateRange');
+
+            if (mode === 'preset') {
+                presetToggle.classList.add('active');
+                customToggle.classList.remove('active');
+                presetRange.style.display = 'block';
+                customRange.style.display = 'none';
+            } else {
+                presetToggle.classList.remove('active');
+                customToggle.classList.add('active');
+                presetRange.style.display = 'none';
+                customRange.style.display = 'flex';
+
+                // Set default custom dates if not already set
+                if (!document.getElementById('startDate').value) {
+                    const endDate = new Date();
+                    const startDate = new Date();
+                    startDate.setDate(startDate.getDate() - 30);
+
+                    document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
+                    document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
+                }
+            }
+        }
+
+        // Apply custom date range
+        function applyCustomDateRange() {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+
+            if (!startDate || !endDate) {
+                alert('Please select both start and end dates');
+                return;
+            }
+
+            if (new Date(startDate) > new Date(endDate)) {
+                alert('Start date cannot be after end date');
+                return;
+            }
+
+            customStartDate = startDate;
+            customEndDate = endDate;
+            fetchUSIDData();
+        }
+
         // Format contribution value with proper sign and color
         function formatContribution(num) {
             if (num === null || num === undefined || isNaN(num)) return '0.00';
             num = Number(num);
-            
+
             if (Math.abs(num) < 0.01) {
                 return num.toFixed(4);
             } else if (Math.abs(num) < 1) {
@@ -680,10 +822,17 @@
 
             document.getElementById('usidDisplay').textContent = currentUSID;
 
-            const days = document.getElementById('dateRange').value;
-            const endDate = new Date();
-            const startDate = new Date();
-            startDate.setDate(startDate.getDate() - parseInt(days));
+            let startDate, endDate;
+
+            if (dateRangeMode === 'preset') {
+                const days = document.getElementById('dateRange').value;
+                endDate = new Date();
+                startDate = new Date();
+                startDate.setDate(startDate.getDate() - parseInt(days));
+            } else {
+                startDate = new Date(customStartDate);
+                endDate = new Date(customEndDate);
+            }
 
             const metricFilter = document.getElementById('metricFilter').value;
 
@@ -704,9 +853,7 @@
 
                 if (response.ok) {
                     const data = await response.json();
-                    
-                    // The API needs to be modified to return IDXCONTR data
-                    // For now, we'll work with the data structure as-is
+
                     currentData = data;
 
                     // Populate metric filter if not already done
@@ -758,9 +905,7 @@
             data.forEach(record => {
                 const date = record.PERIODSTART ? record.PERIODSTART.split('T')[0] : record.DATE;
                 const metric = record.METRIC_DISPLAY || record.METRICNAME || 'Unknown';
-                
-                // Use IDXCONTR if available, otherwise use a sample contribution value
-                // Note: The API endpoint needs to be updated to return IDXCONTR values
+
                 let contribution = 0;
                 if (record.IDXCONTR !== undefined) {
                     contribution = Number(record.IDXCONTR) || 0;
@@ -875,25 +1020,25 @@
                             titleMarginBottom: 8,
                             footerMarginTop: 8,
                             callbacks: {
-                                title: function(tooltipItems) {
+                                title: function (tooltipItems) {
                                     if (tooltipItems.length > 0) {
                                         const date = tooltipItems[0].label;
                                         return [`USID: ${currentUSID}`, `Date: ${date}`];
                                     }
                                     return '';
                                 },
-                                label: function(context) {
+                                label: function (context) {
                                     const metric = context.dataset.label;
                                     const value = context.parsed.y;
                                     const formattedValue = formatContribution(value);
                                     const performance = value < 0 ? '↓ Degrading' : value > 0 ? '↑ Improving' : '→ Neutral';
                                     return `${metric}: ${formattedValue} ${performance}`;
                                 },
-                                afterLabel: function(context) {
+                                afterLabel: function (context) {
                                     // Add percentage change from previous point if available
                                     const dataPoints = context.dataset.data;
                                     const currentIndex = context.dataIndex;
-                                    
+
                                     if (currentIndex > 0) {
                                         const currentValue = dataPoints[currentIndex].y;
                                         const previousValue = dataPoints[currentIndex - 1].y;
@@ -924,14 +1069,12 @@
                                 display: true,
                                 text: 'Contribution (IDXCONTR)'
                             },
-                            // Allow negative values for contribution
                             beginAtZero: false,
                             ticks: {
-                                callback: function(value) {
+                                callback: function (value) {
                                     return formatContribution(value);
                                 },
-                                color: function(context) {
-                                    // Color negative values red, positive green
+                                color: function (context) {
                                     if (context.tick.value < 0) {
                                         return '#ef4444';
                                     } else if (context.tick.value > 0) {
@@ -941,8 +1084,7 @@
                                 }
                             },
                             grid: {
-                                color: function(context) {
-                                    // Highlight zero line
+                                color: function (context) {
                                     if (context.tick.value === 0) {
                                         return '#4a5568';
                                     }
@@ -981,7 +1123,6 @@
                 } else if (d.AVG_IDXCONTR !== undefined) {
                     return Number(d.AVG_IDXCONTR) || 0;
                 } else {
-                    // Generate sample contribution
                     return (Math.random() - 0.7) * 0.05;
                 }
             });
@@ -1012,7 +1153,9 @@
 
         function generateSampleData() {
             const metrics = ['V-CDR', 'NS/ESO', 'DLTPUT', 'ULTPUT', 'D-ACC', 'D-RET'];
-            const days = parseInt(document.getElementById('dateRange').value);
+            const days = dateRangeMode === 'preset' ?
+                parseInt(document.getElementById('dateRange').value) :
+                Math.ceil((new Date(customEndDate) - new Date(customStartDate)) / (1000 * 60 * 60 * 24));
             const data = [];
 
             metrics.forEach(metric => {
@@ -1079,7 +1222,22 @@
         });
 
         document.getElementById('dateRange').addEventListener('change', () => {
-            fetchUSIDData();
+            if (dateRangeMode === 'preset') {
+                fetchUSIDData();
+            }
+        });
+
+        // Add event listeners for custom date inputs
+        document.getElementById('startDate').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                applyCustomDateRange();
+            }
+        });
+
+        document.getElementById('endDate').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                applyCustomDateRange();
+            }
         });
 
         // Keyboard shortcuts
