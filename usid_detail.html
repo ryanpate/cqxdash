@@ -52,27 +52,42 @@
         .controls-section {
             background: white;
             border-radius: 15px;
-            padding: 25px;
+            padding: 20px;
             margin-bottom: 30px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
         }
 
-        .controls-grid {
+        .controls-wrapper {
             display: flex;
-            gap: 20px;
-            align-items: flex-end;
-            flex-wrap: wrap;
+            gap: 30px;
+            align-items: flex-start;
+        }
+
+        .filters-column {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .date-column {
+            flex: 1.5;
+            min-width: 300px;
+        }
+
+        .buttons-column {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            padding-top: 32px;
         }
 
         .control-group {
-            flex: 1;
-            min-width: 150px;
+            margin-bottom: 0;
         }
 
         .control-group label {
             color: #4a5568;
             font-weight: 600;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             font-size: 0.9rem;
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -99,19 +114,21 @@
         /* Date range toggle styles */
         .date-range-toggle {
             display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
+            gap: 8px;
+            margin-bottom: 10px;
         }
 
         .toggle-btn {
-            padding: 8px 16px;
+            flex: 1;
+            padding: 6px 12px;
             border: 2px solid #e2e8f0;
             background: white;
             border-radius: 6px;
             cursor: pointer;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             font-weight: 600;
             transition: all 0.3s ease;
+            text-align: center;
         }
 
         .toggle-btn.active {
@@ -125,21 +142,46 @@
             border-color: #cbd5e0;
         }
 
-        .date-range-container {
-            display: flex;
-            gap: 15px;
-            align-items: flex-end;
-            flex-wrap: wrap;
-        }
-
         .date-inputs {
-            display: flex;
-            gap: 10px;
+            display: grid;
+            grid-template-columns: 1fr 1fr auto;
+            gap: 8px;
             align-items: flex-end;
         }
 
         .date-input-group {
-            min-width: 140px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .date-input-group label {
+            font-size: 0.8rem;
+            color: #718096;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        @media (max-width: 1024px) {
+            .controls-wrapper {
+                flex-direction: column;
+            }
+
+            .buttons-column {
+                width: 100%;
+                padding-top: 0;
+            }
         }
 
         .btn {
@@ -177,8 +219,8 @@
         .btn-apply {
             background: #48bb78;
             color: white;
-            padding: 10px 20px;
-            font-size: 0.9rem;
+            padding: 8px 16px;
+            font-size: 0.85rem;
         }
 
         .btn-apply:hover {
@@ -449,49 +491,54 @@
         </div>
 
         <div class="controls-section">
-            <div class="control-group">
-                <label for="metricFilter">Filter by Metric</label>
-                <select id="metricFilter">
-                    <option value="">All Metrics</option>
-                </select>
-            </div>
-
-            <div style="flex: 2; min-width: 400px;">
-                <div class="date-range-toggle">
-                    <button class="toggle-btn active" id="presetToggle" onclick="toggleDateRangeMode('preset')">Preset
-                        Range</button>
-                    <button class="toggle-btn" id="customToggle" onclick="toggleDateRangeMode('custom')">Custom
-                        Range</button>
-                </div>
-
-                <div class="date-range-container">
-                    <div id="presetDateRange" class="control-group" style="display: block;">
-                        <select id="dateRange">
-                            <option value="7">Last 7 Days</option>
-                            <option value="14">Last 14 Days</option>
-                            <option value="30" selected>Last 30 Days</option>
-                            <option value="60">Last 60 Days</option>
-                            <option value="90">Last 90 Days</option>
+            <div class="controls-wrapper">
+                <div class="filters-column">
+                    <div class="control-group">
+                        <label for="metricFilter">Filter by Metric</label>
+                        <select id="metricFilter">
+                            <option value="">All Metrics</option>
                         </select>
                     </div>
+                </div>
 
-                    <div id="customDateRange" class="date-inputs" style="display: none;">
-                        <div class="date-input-group">
-                            <label for="startDate" style="font-size: 0.85rem;">Start Date</label>
-                            <input type="date" id="startDate">
+                <div class="date-column">
+                    <div class="control-group">
+                        <label>Date Range</label>
+                        <div class="date-range-toggle">
+                            <button class="toggle-btn active" id="presetToggle"
+                                onclick="toggleDateRangeMode('preset')">Preset Range</button>
+                            <button class="toggle-btn" id="customToggle" onclick="toggleDateRangeMode('custom')">Custom
+                                Range</button>
                         </div>
-                        <div class="date-input-group">
-                            <label for="endDate" style="font-size: 0.85rem;">End Date</label>
-                            <input type="date" id="endDate">
+
+                        <div id="presetDateRange" style="display: block;">
+                            <select id="dateRange">
+                                <option value="7">Last 7 Days</option>
+                                <option value="14">Last 14 Days</option>
+                                <option value="30" selected>Last 30 Days</option>
+                                <option value="60">Last 60 Days</option>
+                                <option value="90">Last 90 Days</option>
+                            </select>
                         </div>
-                        <button class="btn btn-apply" onclick="applyCustomDateRange()">Apply</button>
+
+                        <div id="customDateRange" class="date-inputs" style="display: none;">
+                            <div class="date-input-group">
+                                <label for="startDate">Start Date</label>
+                                <input type="date" id="startDate">
+                            </div>
+                            <div class="date-input-group">
+                                <label for="endDate">End Date</label>
+                                <input type="date" id="endDate">
+                            </div>
+                            <button class="btn btn-apply" onclick="applyCustomDateRange()">Apply</button>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div style="display: flex; gap: 10px; align-items: flex-end;">
-                <button class="btn btn-back" onclick="goBack()">← Back to Dashboard</button>
-                <button class="btn btn-refresh" onclick="refreshData()">Refresh Data</button>
+                <div class="buttons-column">
+                    <button class="btn btn-back" onclick="goBack()">← Back to Dashboard</button>
+                    <button class="btn btn-refresh" onclick="refreshData()">Refresh Data</button>
+                </div>
             </div>
         </div>
 
@@ -623,7 +670,7 @@
                 presetToggle.classList.remove('active');
                 customToggle.classList.add('active');
                 presetRange.style.display = 'none';
-                customRange.style.display = 'flex';
+                customRange.style.display = 'grid';
 
                 // Set default custom dates if not already set
                 if (!document.getElementById('startDate').value) {
